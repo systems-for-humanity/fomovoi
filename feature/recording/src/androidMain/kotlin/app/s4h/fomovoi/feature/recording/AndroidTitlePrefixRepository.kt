@@ -15,36 +15,25 @@ class AndroidTitlePrefixRepository(context: Context) : TitlePrefixRepository {
         private const val DEFAULT_PREFIX = "Recording"
     }
 
-    private val prefs by lazy {
-        // SharedPreferences init does disk I/O, allow it here since it's lazy
+    // Initialize prefs and load values with StrictMode allowance
+    // This runs during object construction which happens during Koin setup
+    private val prefs: android.content.SharedPreferences
+    private val _prefixes: MutableStateFlow<List<String>>
+    private val _selectedPrefix: MutableStateFlow<String>
+
+    init {
         val oldPolicy = StrictMode.allowThreadDiskReads()
         try {
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            _prefixes = MutableStateFlow(loadPrefixes())
+            _selectedPrefix = MutableStateFlow(loadSelectedPrefix())
         } finally {
             StrictMode.setThreadPolicy(oldPolicy)
         }
     }
 
-    // Start with defaults, load actual values lazily on first access
-    private val _prefixes = MutableStateFlow(listOf(DEFAULT_PREFIX))
     override val prefixes: StateFlow<List<String>> = _prefixes.asStateFlow()
-
-    private val _selectedPrefix = MutableStateFlow(DEFAULT_PREFIX)
     override val selectedPrefix: StateFlow<String> = _selectedPrefix.asStateFlow()
-
-    private var initialized = false
-
-    private fun ensureInitialized() {
-        if (initialized) return
-        initialized = true
-        val oldPolicy = StrictMode.allowThreadDiskReads()
-        try {
-            _prefixes.value = loadPrefixes()
-            _selectedPrefix.value = loadSelectedPrefix()
-        } finally {
-            StrictMode.setThreadPolicy(oldPolicy)
-        }
-    }
 
     private fun loadPrefixes(): List<String> {
         val saved = prefs.getStringSet(KEY_PREFIXES, null)
@@ -65,7 +54,6 @@ class AndroidTitlePrefixRepository(context: Context) : TitlePrefixRepository {
     }
 
     override fun addPrefix(prefix: String) {
-        ensureInitialized()
         val trimmed = prefix.trim()
         if (trimmed.isBlank() || _prefixes.value.contains(trimmed)) return
 
@@ -76,7 +64,6 @@ class AndroidTitlePrefixRepository(context: Context) : TitlePrefixRepository {
     }
 
     override fun removePrefix(prefix: String) {
-        ensureInitialized()
         if (prefix == DEFAULT_PREFIX) return // Can't remove default
 
         val updated = _prefixes.value - prefix
@@ -89,7 +76,6 @@ class AndroidTitlePrefixRepository(context: Context) : TitlePrefixRepository {
     }
 
     override fun selectPrefix(prefix: String) {
-        ensureInitialized()
         if (!_prefixes.value.contains(prefix)) return
         _selectedPrefix.value = prefix
         prefs.edit().putString(KEY_SELECTED, prefix).apply()
