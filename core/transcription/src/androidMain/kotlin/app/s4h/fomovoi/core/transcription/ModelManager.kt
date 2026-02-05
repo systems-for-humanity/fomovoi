@@ -1,6 +1,7 @@
 package app.s4h.fomovoi.core.transcription
 
 import android.content.Context
+import android.os.StrictMode
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,8 +26,24 @@ class ModelManager(private val context: Context) {
         private const val PREF_SELECTED_MODEL = "selected_model"
     }
 
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val modelsBaseDir = File(context.filesDir, MODELS_DIR)
+    private val prefs by lazy {
+        val oldPolicy = StrictMode.allowThreadDiskReads()
+        try {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        } finally {
+            StrictMode.setThreadPolicy(oldPolicy)
+        }
+    }
+
+    private val modelsBaseDir by lazy {
+        val oldPolicy = StrictMode.allowThreadDiskReads()
+        try {
+            File(context.filesDir, MODELS_DIR).also { it.mkdirs() }
+        } finally {
+            StrictMode.setThreadPolicy(oldPolicy)
+        }
+    }
+
     private val discoveryService = ModelDiscoveryService()
 
     private val _downloadingModels = MutableStateFlow<Set<String>>(emptySet())
@@ -37,10 +54,6 @@ class ModelManager(private val context: Context) {
 
     // Cached discovered models
     private var discoveredModels: List<SpeechModel>? = null
-
-    init {
-        modelsBaseDir.mkdirs()
-    }
 
     /**
      * Discover available models from Hugging Face.

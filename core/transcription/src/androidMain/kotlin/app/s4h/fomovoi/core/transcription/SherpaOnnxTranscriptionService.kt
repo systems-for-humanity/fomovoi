@@ -1,6 +1,7 @@
 package app.s4h.fomovoi.core.transcription
 
 import android.content.Context
+import android.os.StrictMode
 import android.util.Log
 import co.touchlab.kermit.Logger
 import app.s4h.fomovoi.core.audio.AudioChunk
@@ -47,7 +48,15 @@ class SherpaOnnxTranscriptionService(
 
     private val logger = Logger.withTag("SherpaOnnxTranscriptionService")
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private val prefs by lazy {
+        val oldPolicy = StrictMode.allowThreadDiskReads()
+        try {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        } finally {
+            StrictMode.setThreadPolicy(oldPolicy)
+        }
+    }
 
     private var recognizer: OfflineRecognizer? = null
     private var currentModel: SpeechModel? = null
@@ -66,7 +75,8 @@ class SherpaOnnxTranscriptionService(
     private val _currentLanguage = MutableStateFlow(SpeechLanguage.ENGLISH)
     override val currentLanguage: StateFlow<SpeechLanguage> = _currentLanguage.asStateFlow()
 
-    private val _currentLanguageHint = MutableStateFlow(loadLanguageHint())
+    // Initialize with default, actual value loaded lazily
+    private val _currentLanguageHint = MutableStateFlow(LanguageHint.AUTO_DETECT)
     override val currentLanguageHint: StateFlow<LanguageHint> = _currentLanguageHint.asStateFlow()
 
     override val availableLanguages: List<SpeechLanguage> = SpeechLanguage.entries
@@ -75,9 +85,20 @@ class SherpaOnnxTranscriptionService(
 
     override val handlesAudioInternally: Boolean = false
 
+    private var languageHintLoaded = false
+
     private fun loadLanguageHint(): LanguageHint {
-        val code = prefs.getString(PREF_LANGUAGE_HINT, "") ?: ""
-        return LanguageHint.fromCode(code) ?: LanguageHint.AUTO_DETECT
+        if (!languageHintLoaded) {
+            languageHintLoaded = true
+            val oldPolicy = StrictMode.allowThreadDiskReads()
+            try {
+                val code = prefs.getString(PREF_LANGUAGE_HINT, "") ?: ""
+                _currentLanguageHint.value = LanguageHint.fromCode(code) ?: LanguageHint.AUTO_DETECT
+            } finally {
+                StrictMode.setThreadPolicy(oldPolicy)
+            }
+        }
+        return _currentLanguageHint.value
     }
 
     private fun saveLanguageHint(hint: LanguageHint) {
@@ -92,6 +113,9 @@ class SherpaOnnxTranscriptionService(
         try {
             // Run heavy initialization work off the main thread
             withContext(Dispatchers.IO) {
+                // Load language hint from prefs (disk I/O)
+                loadLanguageHint()
+
                 // First discover models from Hugging Face to get accurate file sizes
                 modelManager.discoverModels()
 
