@@ -82,11 +82,11 @@ class SherpaOnnxTranscriptionService(
 
             if (selectedModel == null) {
                 Log.w(TAG, "No model selected, checking for downloaded models...")
-                // Try to find any downloaded Whisper model
+                // Try to find any downloaded Whisper model (prefer smaller models)
                 val availableModels = modelManager.getAvailableModels()
-                val downloadedWhisper = availableModels.find {
-                    it.isDownloaded && (it.type == SpeechModelType.WHISPER_TINY || it.type == SpeechModelType.WHISPER_SMALL)
-                }
+                val downloadedWhisper = availableModels
+                    .filter { it.isDownloaded }
+                    .minByOrNull { it.totalSizeBytes }
 
                 if (downloadedWhisper != null) {
                     Log.d(TAG, "Found downloaded model: ${downloadedWhisper.displayName}")
@@ -116,10 +116,6 @@ class SherpaOnnxTranscriptionService(
     private fun initializeWithModel(model: SpeechModel) {
         Log.d(TAG, "Initializing with model: ${model.displayName}")
 
-        if (model.type != SpeechModelType.WHISPER_TINY && model.type != SpeechModelType.WHISPER_SMALL) {
-            throw IllegalArgumentException("Only Whisper models are supported. Selected: ${model.type}")
-        }
-
         val modelDir = modelManager.getModelDir(model)
         if (!modelManager.isModelDownloaded(model)) {
             throw IllegalStateException("Model not downloaded: ${model.displayName}")
@@ -143,25 +139,19 @@ class SherpaOnnxTranscriptionService(
     }
 
     private fun createWhisperConfig(modelDir: File, model: SpeechModel): OfflineRecognizerConfig {
-        // Get file names based on model type
-        val (encoderName, decoderName, tokensName) = when (model.type) {
-            SpeechModelType.WHISPER_TINY -> Triple(
-                "tiny.en-encoder.int8.onnx",
-                "tiny.en-decoder.int8.onnx",
-                "tiny.en-tokens.txt"
-            )
-            SpeechModelType.WHISPER_SMALL -> Triple(
-                "small.en-encoder.int8.onnx",
-                "small.en-decoder.int8.onnx",
-                "small.en-tokens.txt"
-            )
-            else -> throw IllegalArgumentException("Unsupported model type: ${model.type}")
-        }
+        // Use the model's file prefix to construct file names dynamically
+        val prefix = model.filePrefix
+        val encoderName = "$prefix-encoder.int8.onnx"
+        val decoderName = "$prefix-decoder.int8.onnx"
+        val tokensName = "$prefix-tokens.txt"
+
+        // Determine language setting for Whisper
+        val whisperLanguage = if (model.language == SpeechLanguage.ENGLISH) "en" else ""
 
         val whisperConfig = OfflineWhisperModelConfig(
             encoder = File(modelDir, encoderName).absolutePath,
             decoder = File(modelDir, decoderName).absolutePath,
-            language = "en",
+            language = whisperLanguage,
             task = "transcribe"
         )
 
@@ -181,12 +171,11 @@ class SherpaOnnxTranscriptionService(
 
     override suspend fun setLanguage(language: SpeechLanguage) {
         // For Whisper, language is determined by the model
-        // Find a downloaded model for this language
+        // Find a downloaded model for this language (prefer smaller models)
         val availableModels = modelManager.getAvailableModels()
-        val modelForLanguage = availableModels.find {
-            it.isDownloaded && it.language == language &&
-            (it.type == SpeechModelType.WHISPER_TINY || it.type == SpeechModelType.WHISPER_SMALL)
-        }
+        val modelForLanguage = availableModels
+            .filter { it.isDownloaded && it.language == language }
+            .minByOrNull { it.totalSizeBytes }
 
         if (modelForLanguage != null) {
             Log.d(TAG, "Switching to model for ${language.displayName}: ${modelForLanguage.displayName}")

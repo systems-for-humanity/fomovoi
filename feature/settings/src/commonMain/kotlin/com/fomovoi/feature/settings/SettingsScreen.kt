@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -223,16 +224,18 @@ private fun ModelFilterChips(
     selectedFilter: SpeechModelType?,
     onFilterSelected: (SpeechModelType?) -> Unit
 ) {
-    Row(
+    LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        FilterChip(
-            selected = selectedFilter == null,
-            onClick = { onFilterSelected(null) },
-            label = { Text("All") }
-        )
-        SpeechModelType.entries.forEach { type ->
+        item {
+            FilterChip(
+                selected = selectedFilter == null,
+                onClick = { onFilterSelected(null) },
+                label = { Text("All") }
+            )
+        }
+        items(SpeechModelType.entries.toList()) { type ->
             FilterChip(
                 selected = selectedFilter == type,
                 onClick = { onFilterSelected(type) },

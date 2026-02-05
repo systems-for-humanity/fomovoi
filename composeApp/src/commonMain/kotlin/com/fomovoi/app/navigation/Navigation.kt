@@ -1,5 +1,10 @@
 package com.fomovoi.app.navigation
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
@@ -14,12 +19,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.fomovoi.core.domain.model.Recording
+import com.fomovoi.core.sharing.ShareService
 import com.fomovoi.feature.history.HistoryScreen
+import com.fomovoi.feature.history.RecordingDetailScreen
 import com.fomovoi.feature.recording.RecordingScreen
 import com.fomovoi.feature.settings.SettingsScreen
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 enum class Screen(
     val title: String,
@@ -35,6 +46,27 @@ fun AppNavigation(
     modifier: Modifier = Modifier
 ) {
     var currentScreen by remember { mutableStateOf(Screen.Recording) }
+    var selectedRecording by remember { mutableStateOf<Recording?>(null) }
+    val shareService: ShareService = koinInject()
+    val scope = rememberCoroutineScope()
+
+    // Show detail screen if a recording is selected
+    if (selectedRecording != null) {
+        RecordingDetailScreen(
+            recording = selectedRecording!!,
+            onBackClick = { selectedRecording = null },
+            onShareClick = {
+                selectedRecording?.let { recording ->
+                    val text = buildTranscriptionText(recording)
+                    scope.launch {
+                        shareService.shareText(text, "Fomovoi Transcription")
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        return
+    }
 
     Scaffold(
         bottomBar = {
@@ -56,16 +88,36 @@ fun AppNavigation(
         },
         modifier = modifier
     ) { paddingValues ->
-        when (currentScreen) {
-            Screen.Recording -> RecordingScreen(
-                modifier = Modifier.padding(paddingValues)
-            )
-            Screen.History -> HistoryScreen(
-                modifier = Modifier.padding(paddingValues)
-            )
-            Screen.Settings -> SettingsScreen(
-                modifier = Modifier.padding(paddingValues)
-            )
+        AnimatedContent(
+            targetState = currentScreen,
+            transitionSpec = {
+                slideInHorizontally { it } togetherWith slideOutHorizontally { -it }
+            },
+            modifier = Modifier.padding(paddingValues)
+        ) { screen ->
+            when (screen) {
+                Screen.Recording -> RecordingScreen(
+                    modifier = Modifier.fillMaxSize()
+                )
+                Screen.History -> HistoryScreen(
+                    onRecordingClick = { recording ->
+                        selectedRecording = recording
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+                Screen.Settings -> SettingsScreen(
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
+
+private fun buildTranscriptionText(recording: Recording): String {
+    return buildString {
+        recording.transcription?.utterances?.forEach { utterance ->
+            appendLine("[${utterance.speaker.label}]: ${utterance.text}")
+            appendLine()
         }
     }
 }

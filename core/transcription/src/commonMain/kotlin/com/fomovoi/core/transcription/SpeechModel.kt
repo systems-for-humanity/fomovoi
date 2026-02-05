@@ -1,7 +1,8 @@
 package com.fomovoi.core.transcription
 
 /**
- * Available speech recognition models with their configurations.
+ * Available speech recognition model types.
+ * All Whisper models use batch processing (not streaming).
  */
 enum class SpeechModelType(
     val displayName: String,
@@ -10,12 +11,42 @@ enum class SpeechModelType(
 ) {
     WHISPER_TINY(
         displayName = "Whisper Tiny",
-        description = "Fast, good accuracy (~100MB)",
+        description = "Fastest, ~100MB",
+        isStreaming = false
+    ),
+    WHISPER_BASE(
+        displayName = "Whisper Base",
+        description = "Fast, ~150MB",
         isStreaming = false
     ),
     WHISPER_SMALL(
         displayName = "Whisper Small",
-        description = "Best accuracy, slower (~375MB)",
+        description = "Balanced, ~375MB",
+        isStreaming = false
+    ),
+    WHISPER_MEDIUM(
+        displayName = "Whisper Medium",
+        description = "Good accuracy, ~750MB",
+        isStreaming = false
+    ),
+    WHISPER_LARGE(
+        displayName = "Whisper Large",
+        description = "Best accuracy, ~1.5GB+",
+        isStreaming = false
+    ),
+    WHISPER_TURBO(
+        displayName = "Whisper Turbo",
+        description = "Optimized large model",
+        isStreaming = false
+    ),
+    WHISPER_DISTIL(
+        displayName = "Whisper Distil",
+        description = "Distilled for speed",
+        isStreaming = false
+    ),
+    WHISPER_OTHER(
+        displayName = "Whisper",
+        description = "Other Whisper variant",
         isStreaming = false
     )
 }
@@ -39,11 +70,17 @@ data class SpeechModel(
         get() = (totalSizeBytes / 1_000_000).toInt()
 
     val displayName: String
-        get() = "${language.displayName} - ${type.displayName}"
+        get() = "${type.displayName} (${language.displayName})"
+
+    /**
+     * Get the file prefix used for model files (e.g., "tiny.en", "large-v3")
+     */
+    val filePrefix: String
+        get() = id.removePrefix("whisper-")
 }
 
 /**
- * Available speech models catalog.
+ * Fallback static catalog for when Hugging Face discovery fails.
  */
 object SpeechModelCatalog {
 
@@ -55,7 +92,7 @@ object SpeechModelCatalog {
     }
 
     val whisperTinyEnglish = SpeechModel(
-        id = "whisper-tiny-en",
+        id = "whisper-tiny.en",
         type = SpeechModelType.WHISPER_TINY,
         language = SpeechLanguage.ENGLISH,
         baseUrl = "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny.en/resolve/main",
@@ -67,7 +104,7 @@ object SpeechModelCatalog {
     )
 
     val whisperSmallEnglish = SpeechModel(
-        id = "whisper-small-en",
+        id = "whisper-small.en",
         type = SpeechModelType.WHISPER_SMALL,
         language = SpeechLanguage.ENGLISH,
         baseUrl = "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small.en/resolve/main",
