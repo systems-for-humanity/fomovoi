@@ -44,6 +44,8 @@ class SherpaOnnxTranscriptionService(
         private const val TAG = "SherpaOnnxTranscription"
         private const val PREFS_NAME = "transcription_prefs"
         private const val PREF_LANGUAGE_HINT = "language_hint"
+        private const val SAMPLE_RATE = 16000
+        private const val CHUNK_DURATION_SECS = 28 // Whisper handles ~30s max, use 28s for safety
     }
 
     private val logger = Logger.withTag("SherpaOnnxTranscriptionService")
@@ -332,16 +334,17 @@ class SherpaOnnxTranscriptionService(
         Log.d(TAG, "stopTranscription() called, audioBuffer chunks: ${audioBuffer.size}")
         logger.d { "Stopping transcription" }
 
+        // Set state to READY immediately so UI updates (timer stops)
+        _state.value = TranscriptionState.READY
+
         if (audioBuffer.isEmpty()) {
             Log.d(TAG, "No audio recorded")
-            _state.value = TranscriptionState.READY
             return null
         }
 
         val currentRecognizer = recognizer
         if (currentRecognizer == null) {
             Log.e(TAG, "Recognizer is null")
-            _state.value = TranscriptionState.READY
             return null
         }
 
@@ -354,26 +357,27 @@ class SherpaOnnxTranscriptionService(
             offset += chunk.size
         }
 
-        Log.d(TAG, "Processing ${totalSamples} samples (${totalSamples / 16000.0}s of audio)")
+        val totalDurationSecs = totalSamples / SAMPLE_RATE
+        Log.d(TAG, "Processing ${totalSamples} samples (${totalDurationSecs}s of audio)")
 
         scope.launch {
             _events.emit(TranscriptionEvent.PartialResult("Transcribing..."))
         }
 
-        // Run Whisper transcription
+        // Run Whisper transcription with chunking for long audio
         return withContext(Dispatchers.Default) {
             try {
-                val stream = currentRecognizer.createStream()
-                stream.acceptWaveform(allSamples, 16000)
-                currentRecognizer.decode(stream)
-
-                val result = currentRecognizer.getResult(stream)
-                val text = result.text.trim()
+                val text = if (totalDurationSecs <= CHUNK_DURATION_SECS) {
+                    // Short audio - transcribe directly
+                    transcribeChunk(currentRecognizer, allSamples)
+                } else {
+                    // Long audio - split into chunks and transcribe each
+                    transcribeLongAudio(currentRecognizer, allSamples, totalDurationSecs)
+                }
 
                 Log.d(TAG, "Transcription result: $text")
 
                 audioBuffer.clear()
-                _state.value = TranscriptionState.READY
 
                 if (text.isEmpty()) {
                     Log.d(TAG, "Empty transcription result")
@@ -406,13 +410,55 @@ class SherpaOnnxTranscriptionService(
             } catch (e: Exception) {
                 Log.e(TAG, "Transcription failed: ${e.message}", e)
                 audioBuffer.clear()
-                _state.value = TranscriptionState.READY
                 scope.launch {
                     _events.emit(TranscriptionEvent.Error("Transcription failed: ${e.message}"))
                 }
                 null
             }
         }
+    }
+
+    private fun transcribeChunk(recognizer: OfflineRecognizer, samples: FloatArray): String {
+        val stream = recognizer.createStream()
+        stream.acceptWaveform(samples, SAMPLE_RATE)
+        recognizer.decode(stream)
+        return recognizer.getResult(stream).text.trim()
+    }
+
+    private suspend fun transcribeLongAudio(
+        recognizer: OfflineRecognizer,
+        allSamples: FloatArray,
+        totalDurationSecs: Int
+    ): String {
+        val chunkSizeSamples = CHUNK_DURATION_SECS * SAMPLE_RATE
+        val results = mutableListOf<String>()
+        var processedSamples = 0
+        var chunkIndex = 0
+        val totalChunks = (allSamples.size + chunkSizeSamples - 1) / chunkSizeSamples
+
+        while (processedSamples < allSamples.size) {
+            val remainingSamples = allSamples.size - processedSamples
+            val currentChunkSize = minOf(chunkSizeSamples, remainingSamples)
+
+            // Extract chunk
+            val chunk = allSamples.copyOfRange(processedSamples, processedSamples + currentChunkSize)
+
+            chunkIndex++
+            Log.d(TAG, "Transcribing chunk $chunkIndex/$totalChunks (${currentChunkSize / SAMPLE_RATE}s)")
+
+            scope.launch {
+                _events.emit(TranscriptionEvent.PartialResult("Transcribing chunk $chunkIndex/$totalChunks..."))
+            }
+
+            val chunkText = transcribeChunk(recognizer, chunk)
+            if (chunkText.isNotEmpty()) {
+                results.add(chunkText)
+            }
+
+            processedSamples += currentChunkSize
+        }
+
+        return results.joinToString(" ")
     }
 
     override suspend fun setSpeakerLabel(speakerId: String, label: String) {
