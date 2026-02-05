@@ -31,8 +31,11 @@ data class RecordingUiState(
     val isSharing: Boolean = false,
     val error: String? = null
 ) {
+    // Recording state considers both audio recorder and transcription service
+    // (some transcription services handle audio internally)
     val isRecording: Boolean
-        get() = recordingState == RecordingState.RECORDING
+        get() = recordingState == RecordingState.RECORDING ||
+                transcriptionState == TranscriptionState.TRANSCRIBING
 
     val isPaused: Boolean
         get() = recordingState == RecordingState.PAUSED
@@ -68,6 +71,9 @@ class RecordingViewModel(
 
     private var startTimeMs: Long = 0
     private val collectedUtterances = mutableListOf<Utterance>()
+    private var isInitialized = false
+
+    private var audioStreamJob: kotlinx.coroutines.Job? = null
 
     init {
         observeAudioState()
@@ -126,10 +132,19 @@ class RecordingViewModel(
     }
 
     fun initialize() {
+        if (isInitialized) {
+            logger.d { "initialize() called but already initialized, skipping" }
+            return
+        }
+        logger.d { "initialize() called" }
         viewModelScope.launch {
             try {
+                logger.d { "Initializing audioRecorder..." }
                 audioRecorder.initialize()
+                logger.d { "Initializing transcriptionService..." }
                 transcriptionService.initialize()
+                isInitialized = true
+                logger.d { "Initialization complete" }
             } catch (e: Exception) {
                 logger.e(e) { "Failed to initialize" }
                 _uiState.update { it.copy(error = "Failed to initialize: ${e.message}") }
@@ -138,6 +153,7 @@ class RecordingViewModel(
     }
 
     fun startRecording() {
+        logger.d { "startRecording() called, canStart=${_uiState.value.canStart}" }
         viewModelScope.launch {
             try {
                 collectedUtterances.clear()
@@ -150,8 +166,26 @@ class RecordingViewModel(
                 }
 
                 startTimeMs = Clock.System.now().toEpochMilliseconds()
-                audioRecorder.startRecording()
+
+                // Only start audio recorder if transcription service doesn't handle audio internally
+                // (e.g., Android SpeechRecognizer handles its own audio capture)
+                if (!transcriptionService.handlesAudioInternally) {
+                    logger.d { "Starting audioRecorder..." }
+                    audioRecorder.startRecording()
+
+                    // Pipe audio stream to transcription service
+                    audioStreamJob = viewModelScope.launch {
+                        audioRecorder.audioStream.collect { chunk ->
+                            transcriptionService.processAudioChunk(chunk)
+                        }
+                    }
+                } else {
+                    logger.d { "Transcription service handles audio internally, skipping audioRecorder" }
+                }
+
+                logger.d { "Starting transcriptionService..." }
                 transcriptionService.startTranscription()
+                logger.d { "Recording and transcription started" }
 
                 // Start elapsed time tracking
                 startElapsedTimeUpdates()
@@ -176,23 +210,38 @@ class RecordingViewModel(
 
     fun pauseRecording() {
         viewModelScope.launch {
-            audioRecorder.pauseRecording()
+            if (!transcriptionService.handlesAudioInternally) {
+                audioRecorder.pauseRecording()
+            }
+            // Note: Android SpeechRecognizer doesn't support pause, so we just stop and restart
         }
     }
 
     fun resumeRecording() {
         viewModelScope.launch {
-            audioRecorder.resumeRecording()
+            if (!transcriptionService.handlesAudioInternally) {
+                audioRecorder.resumeRecording()
+            }
         }
     }
 
     fun stopRecording() {
+        logger.d { "stopRecording() called, isRecording=${_uiState.value.isRecording}" }
         viewModelScope.launch {
             try {
-                audioRecorder.stopRecording()
+                // Stop audio stream piping
+                audioStreamJob?.cancel()
+                audioStreamJob = null
+
+                if (!transcriptionService.handlesAudioInternally) {
+                    audioRecorder.stopRecording()
+                }
+                logger.d { "Calling transcriptionService.stopTranscription()" }
                 val result = transcriptionService.stopTranscription()
+                logger.d { "stopTranscription returned: ${result?.utterances?.size ?: 0} utterances" }
 
                 result?.let { transcription ->
+                    logger.d { "Saving recording with ${transcription.utterances.size} utterances" }
                     saveRecording(transcription)
                 }
             } catch (e: Exception) {

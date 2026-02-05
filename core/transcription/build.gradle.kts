@@ -35,6 +35,8 @@ kotlin {
 
         androidMain.dependencies {
             implementation(libs.kotlinx.coroutines.android)
+            // Sherpa-ONNX for continuous transcription
+            implementation(libs.sherpa.onnx)
         }
     }
 }

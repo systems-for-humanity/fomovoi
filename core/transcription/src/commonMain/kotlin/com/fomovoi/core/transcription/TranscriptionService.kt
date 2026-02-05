@@ -9,6 +9,14 @@ interface TranscriptionService {
     val events: Flow<TranscriptionEvent>
     val currentSpeaker: StateFlow<Speaker?>
 
+    /**
+     * Whether this transcription service handles audio input internally.
+     * If true, the caller should NOT start a separate AudioRecorder as it
+     * would conflict with the transcription service's internal audio capture.
+     */
+    val handlesAudioInternally: Boolean
+        get() = false
+
     suspend fun initialize()
     suspend fun startTranscription()
     suspend fun processAudioChunk(chunk: AudioChunk)

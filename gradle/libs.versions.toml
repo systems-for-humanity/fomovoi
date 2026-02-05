@@ -28,6 +28,9 @@ sqldelight = "2.0.2"
 # Logging
 kermit = "2.0.4"
 
+# Speech Recognition (Sherpa-ONNX via Maven Central wrapper)
+sherpa-onnx = "6.25.12"
+
 [libraries]
 # Kotlin
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
@@ -64,6 +67,9 @@ sqldelight-native-driver = { module = "app.cash.sqldelight:native-driver", versi
 
 # Logging
 kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }
+
+# Speech Recognition (Sherpa-ONNX)
+sherpa-onnx = { module = "com.bihe0832.android:lib-sherpa-onnx", version.ref = "sherpa-onnx" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

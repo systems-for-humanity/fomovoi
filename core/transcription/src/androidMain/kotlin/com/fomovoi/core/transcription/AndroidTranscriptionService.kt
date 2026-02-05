@@ -8,6 +8,7 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 import co.touchlab.kermit.Logger
 import com.fomovoi.core.audio.AudioChunk
 import kotlinx.coroutines.CoroutineScope
@@ -38,15 +39,23 @@ class AndroidTranscriptionService(
     private val context: Context
 ) : TranscriptionService {
 
+    companion object {
+        private const val TAG = "FomovoiTranscription"
+    }
+
     private val logger = Logger.withTag("AndroidTranscriptionService")
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // Android SpeechRecognizer handles audio capture internally
+    override val handlesAudioInternally: Boolean = true
 
     private var speechRecognizer: SpeechRecognizer? = null
     private val utterances = mutableListOf<Utterance>()
     private var currentUtteranceStart: Long = 0
     private var sessionStartTime: Long = 0
     private var isListening = false
+    private var lastPartialResult: String = ""  // Track partial results to use on ERROR_NO_MATCH
 
     private val _state = MutableStateFlow(TranscriptionState.IDLE)
     override val state: StateFlow<TranscriptionState> = _state.asStateFlow()
@@ -60,20 +69,25 @@ class AndroidTranscriptionService(
     private val speakers = mutableMapOf<String, Speaker>()
 
     override suspend fun initialize() {
+        Log.d(TAG, "initialize() called")
         logger.d { "Initializing Android transcription service" }
         _state.value = TranscriptionState.INITIALIZING
 
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            Log.e(TAG, "Speech recognition not available on this device")
             logger.e { "Speech recognition not available" }
             _state.value = TranscriptionState.ERROR
             _events.emit(TranscriptionEvent.Error("Speech recognition not available on this device"))
             return
         }
+        Log.d(TAG, "Speech recognition is available")
 
         // SpeechRecognizer MUST be created on main thread
         withContext(Dispatchers.Main) {
+            Log.d(TAG, "Creating SpeechRecognizer on main thread")
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
             speechRecognizer?.setRecognitionListener(createRecognitionListener())
+            Log.d(TAG, "SpeechRecognizer created: ${speechRecognizer != null}")
         }
 
         // Initialize default speaker
@@ -82,17 +96,21 @@ class AndroidTranscriptionService(
         _currentSpeaker.value = defaultSpeaker
 
         _state.value = TranscriptionState.READY
+        Log.d(TAG, "Transcription service initialized, state=READY")
         logger.d { "Transcription service initialized" }
     }
 
     private fun createRecognitionListener() = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
+            Log.d(TAG, "onReadyForSpeech")
             logger.d { "Ready for speech" }
             isListening = true
             currentUtteranceStart = System.currentTimeMillis() - sessionStartTime
+            lastPartialResult = ""  // Clear partial result for new listening session
         }
 
         override fun onBeginningOfSpeech() {
+            Log.d(TAG, "onBeginningOfSpeech")
             logger.d { "Beginning of speech" }
         }
 
@@ -101,10 +119,12 @@ class AndroidTranscriptionService(
         }
 
         override fun onBufferReceived(buffer: ByteArray?) {
+            Log.d(TAG, "onBufferReceived: ${buffer?.size} bytes")
             // Raw audio buffer
         }
 
         override fun onEndOfSpeech() {
+            Log.d(TAG, "onEndOfSpeech")
             logger.d { "End of speech" }
             isListening = false
         }
@@ -123,6 +143,7 @@ class AndroidTranscriptionService(
                 SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech input"
                 else -> "Unknown error: $error"
             }
+            Log.e(TAG, "onError: $errorMessage (code: $error)")
             logger.e { "Recognition error: $errorMessage (code: $error)" }
 
             // Emit error for fatal errors only
@@ -133,24 +154,50 @@ class AndroidTranscriptionService(
                 return
             }
 
+            // Handle ERROR_NO_MATCH by using the last partial result if available
+            // This is common when speech is detected but recognition can't get a final result
+            if (error == SpeechRecognizer.ERROR_NO_MATCH && lastPartialResult.isNotBlank()) {
+                Log.d(TAG, "Using last partial result as final: $lastPartialResult")
+                val currentTime = System.currentTimeMillis() - sessionStartTime
+                val speaker = _currentSpeaker.value
+
+                if (speaker != null) {
+                    val utterance = Utterance(
+                        id = UUID.randomUUID().toString(),
+                        text = lastPartialResult,
+                        speaker = speaker,
+                        startTimeMs = currentUtteranceStart,
+                        endTimeMs = currentTime
+                    )
+                    utterances.add(utterance)
+                    scope.launch {
+                        _events.emit(TranscriptionEvent.FinalResult(utterance))
+                    }
+                }
+                lastPartialResult = ""  // Clear after using
+            }
+
             // Restart recognition for continuous listening
             if (_state.value == TranscriptionState.TRANSCRIBING) {
-                // Small delay before restarting to avoid rapid restarts
-                mainHandler.postDelayed({
+                // Restart immediately for better continuity
+                mainHandler.post {
                     if (_state.value == TranscriptionState.TRANSCRIBING) {
                         logger.d { "Restarting speech recognition after error" }
                         startListeningInternal()
                     }
-                }, 100)
+                }
             }
         }
 
         override fun onResults(results: Bundle?) {
+            Log.d(TAG, "onResults called")
             isListening = false
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val text = matches?.firstOrNull()
+            Log.d(TAG, "onResults: matches=$matches, text=$text")
 
             if (!text.isNullOrBlank()) {
+                Log.d(TAG, "Final result: $text")
                 logger.d { "Final result: $text" }
 
                 val currentTime = System.currentTimeMillis() - sessionStartTime
@@ -171,21 +218,23 @@ class AndroidTranscriptionService(
                 }
             }
 
-            // Continue listening if still transcribing
+            // Continue listening if still transcribing - restart immediately for continuity
             if (_state.value == TranscriptionState.TRANSCRIBING) {
-                mainHandler.postDelayed({
+                mainHandler.post {
                     if (_state.value == TranscriptionState.TRANSCRIBING) {
                         startListeningInternal()
                     }
-                }, 100)
+                }
             }
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
             val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val text = matches?.firstOrNull() ?: return
+            Log.d(TAG, "onPartialResults: $text")
 
             if (text.isNotBlank()) {
+                lastPartialResult = text  // Track for use on ERROR_NO_MATCH
                 scope.launch {
                     _events.emit(TranscriptionEvent.PartialResult(text))
                 }
@@ -198,23 +247,29 @@ class AndroidTranscriptionService(
     }
 
     override suspend fun startTranscription() {
+        Log.d(TAG, "startTranscription() called, current state: ${_state.value}")
         if (_state.value != TranscriptionState.READY && _state.value != TranscriptionState.IDLE) {
+            Log.w(TAG, "Cannot start transcription in state: ${_state.value}")
             logger.w { "Cannot start transcription in state: ${_state.value}" }
             return
         }
 
+        Log.d(TAG, "Starting transcription")
         logger.d { "Starting transcription" }
         utterances.clear()
         sessionStartTime = System.currentTimeMillis()
         _state.value = TranscriptionState.TRANSCRIBING
 
         withContext(Dispatchers.Main) {
+            Log.d(TAG, "Calling startListeningInternal on main thread")
             startListeningInternal()
         }
     }
 
     private fun startListeningInternal() {
+        Log.d(TAG, "startListeningInternal() called, isListening=$isListening, speechRecognizer=${speechRecognizer != null}")
         if (isListening) {
+            Log.d(TAG, "Already listening, skipping start")
             logger.d { "Already listening, skipping start" }
             return
         }
@@ -228,8 +283,10 @@ class AndroidTranscriptionService(
             // putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
         }
 
+        Log.d(TAG, "Starting speech recognizer with language: ${Locale.getDefault().toLanguageTag()}")
         logger.d { "Starting speech recognizer with language: ${Locale.getDefault().toLanguageTag()}" }
         speechRecognizer?.startListening(intent)
+        Log.d(TAG, "startListening() called on speechRecognizer")
     }
 
     override suspend fun processAudioChunk(chunk: AudioChunk) {
@@ -238,6 +295,7 @@ class AndroidTranscriptionService(
     }
 
     override suspend fun stopTranscription(): TranscriptionResult? {
+        Log.d(TAG, "stopTranscription() called, utterances.size=${utterances.size}")
         logger.d { "Stopping transcription" }
         _state.value = TranscriptionState.READY
         isListening = false
@@ -247,7 +305,9 @@ class AndroidTranscriptionService(
             speechRecognizer?.cancel()
         }
 
+        Log.d(TAG, "After stopping, utterances.size=${utterances.size}")
         if (utterances.isEmpty()) {
+            Log.d(TAG, "No utterances to return, returning null")
             return null
         }
 
