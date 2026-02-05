@@ -1,5 +1,7 @@
 package com.fomovoi.feature.settings
 
+import com.fomovoi.core.transcription.LanguageHint
+import com.fomovoi.core.transcription.SpeechLanguage
 import com.fomovoi.core.transcription.SpeechModel
 import com.fomovoi.core.transcription.SpeechModelType
 import kotlinx.coroutines.flow.StateFlow
@@ -11,7 +13,8 @@ data class SettingsUiState(
     val downloadProgress: Map<String, Float> = emptyMap(),
     val totalStorageUsedMB: Int = 0,
     val error: String? = null,
-    val filterByType: SpeechModelType? = null
+    val filterByType: SpeechModelType? = null,
+    val languageHint: LanguageHint = LanguageHint.AUTO_DETECT
 ) {
     val filteredModels: List<SpeechModel>
         get() = if (filterByType != null) {
@@ -25,6 +28,13 @@ data class SettingsUiState(
 
     val selectedModel: SpeechModel?
         get() = models.find { it.id == selectedModelId && it.isDownloaded }
+
+    /**
+     * Whether the language hint setting should be shown.
+     * Only relevant when a multilingual model is selected.
+     */
+    val showLanguageHint: Boolean
+        get() = selectedModel?.language == SpeechLanguage.MULTILINGUAL
 }
 
 interface SettingsViewModelInterface {
@@ -35,5 +45,6 @@ interface SettingsViewModelInterface {
     fun deleteModel(model: SpeechModel)
     fun selectModel(model: SpeechModel)
     fun setFilter(type: SpeechModelType?)
+    fun setLanguageHint(hint: LanguageHint)
     fun clearError()
 }

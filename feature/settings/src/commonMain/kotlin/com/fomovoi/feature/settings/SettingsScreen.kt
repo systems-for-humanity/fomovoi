@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.fomovoi.core.transcription.LanguageHint
 import com.fomovoi.core.transcription.SpeechModel
 import com.fomovoi.core.transcription.SpeechModelType
 import org.koin.compose.koinInject
@@ -97,6 +98,16 @@ fun SettingsScreen(
                 SelectedModelCard(
                     selectedModel = uiState.selectedModel
                 )
+            }
+
+            // Language hint (only for multilingual models)
+            if (uiState.showLanguageHint) {
+                item {
+                    LanguageHintCard(
+                        currentHint = uiState.languageHint,
+                        onHintSelected = viewModel::setLanguageHint
+                    )
+                }
             }
 
             // Filter chips
@@ -212,6 +223,57 @@ private fun SelectedModelCard(
                         text = if (selectedModel.type.isStreaming) "Real-time transcription" else "Batch transcription",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageHintCard(
+    currentHint: LanguageHint,
+    onHintSelected: (LanguageHint) -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Language,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Language Hint",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Text(
+                        text = "Help Whisper recognize the spoken language",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(LanguageHint.entries.toList()) { hint ->
+                    FilterChip(
+                        selected = currentHint == hint,
+                        onClick = { onHintSelected(hint) },
+                        label = { Text(hint.displayName) }
                     )
                 }
             }

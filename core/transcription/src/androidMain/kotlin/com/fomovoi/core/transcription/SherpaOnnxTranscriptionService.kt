@@ -40,11 +40,14 @@ class SherpaOnnxTranscriptionService(
 
     companion object {
         private const val TAG = "SherpaOnnxTranscription"
+        private const val PREFS_NAME = "transcription_prefs"
+        private const val PREF_LANGUAGE_HINT = "language_hint"
     }
 
     private val logger = Logger.withTag("SherpaOnnxTranscriptionService")
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val modelManager = ModelManager(context)
+    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private var recognizer: OfflineRecognizer? = null
     private var currentModel: SpeechModel? = null
@@ -63,11 +66,23 @@ class SherpaOnnxTranscriptionService(
     private val _currentLanguage = MutableStateFlow(SpeechLanguage.ENGLISH)
     override val currentLanguage: StateFlow<SpeechLanguage> = _currentLanguage.asStateFlow()
 
+    private val _currentLanguageHint = MutableStateFlow(loadLanguageHint())
+    override val currentLanguageHint: StateFlow<LanguageHint> = _currentLanguageHint.asStateFlow()
+
     override val availableLanguages: List<SpeechLanguage> = SpeechLanguage.entries
 
     private val speakers = mutableMapOf<String, Speaker>()
 
     override val handlesAudioInternally: Boolean = false
+
+    private fun loadLanguageHint(): LanguageHint {
+        val code = prefs.getString(PREF_LANGUAGE_HINT, "") ?: ""
+        return LanguageHint.fromCode(code) ?: LanguageHint.AUTO_DETECT
+    }
+
+    private fun saveLanguageHint(hint: LanguageHint) {
+        prefs.edit().putString(PREF_LANGUAGE_HINT, hint.code).apply()
+    }
 
     override suspend fun initialize() {
         Log.d(TAG, "initialize() called")
@@ -146,7 +161,15 @@ class SherpaOnnxTranscriptionService(
         val tokensName = "$prefix-tokens.txt"
 
         // Determine language setting for Whisper
-        val whisperLanguage = if (model.language == SpeechLanguage.ENGLISH) "en" else ""
+        // For English-only models, always use "en"
+        // For multilingual models, use the language hint (or empty for auto-detect)
+        val whisperLanguage = if (model.language == SpeechLanguage.ENGLISH) {
+            "en"
+        } else {
+            _currentLanguageHint.value.code
+        }
+
+        Log.d(TAG, "Creating Whisper config with language: '$whisperLanguage' (hint: ${_currentLanguageHint.value.displayName})")
 
         val whisperConfig = OfflineWhisperModelConfig(
             encoder = File(modelDir, encoderName).absolutePath,
@@ -198,6 +221,32 @@ class SherpaOnnxTranscriptionService(
             }
         } else {
             _events.emit(TranscriptionEvent.Error("No ${language.displayName} model downloaded"))
+        }
+    }
+
+    override suspend fun setLanguageHint(hint: LanguageHint) {
+        Log.d(TAG, "Setting language hint to: ${hint.displayName} (${hint.code})")
+        _currentLanguageHint.value = hint
+        saveLanguageHint(hint)
+
+        // Reinitialize recognizer if using a multilingual model to apply the new hint
+        val model = currentModel
+        if (model != null && model.language == SpeechLanguage.MULTILINGUAL) {
+            val wasTranscribing = _state.value == TranscriptionState.TRANSCRIBING
+            if (wasTranscribing) {
+                stopTranscription()
+            }
+
+            _state.value = TranscriptionState.INITIALIZING
+            try {
+                initializeWithModel(model)
+                _state.value = TranscriptionState.READY
+                _events.emit(TranscriptionEvent.Error("Language hint set to ${hint.displayName}"))
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to reinitialize with new language hint: ${e.message}", e)
+                _state.value = TranscriptionState.ERROR
+                _events.emit(TranscriptionEvent.Error("Failed to apply language hint: ${e.message}"))
+            }
         }
     }
 

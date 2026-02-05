@@ -3,9 +3,11 @@ package com.fomovoi.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
+import com.fomovoi.core.transcription.LanguageHint
 import com.fomovoi.core.transcription.ModelManager
 import com.fomovoi.core.transcription.SpeechModel
 import com.fomovoi.core.transcription.SpeechModelType
+import com.fomovoi.core.transcription.TranscriptionService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +20,7 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
 
     private val logger = Logger.withTag("SettingsViewModel")
     private val modelManager: ModelManager by inject()
+    private val transcriptionService: TranscriptionService by inject()
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     override val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -25,6 +28,7 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
     init {
         loadModels()
         observeDownloads()
+        observeLanguageHint()
     }
 
     private fun observeDownloads() {
@@ -36,6 +40,14 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
         viewModelScope.launch {
             modelManager.downloadProgress.collect { progress ->
                 _uiState.update { it.copy(downloadProgress = progress) }
+            }
+        }
+    }
+
+    private fun observeLanguageHint() {
+        viewModelScope.launch {
+            transcriptionService.currentLanguageHint.collect { hint ->
+                _uiState.update { it.copy(languageHint = hint) }
             }
         }
     }
@@ -103,6 +115,17 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
 
     override fun setFilter(type: SpeechModelType?) {
         _uiState.update { it.copy(filterByType = type) }
+    }
+
+    override fun setLanguageHint(hint: LanguageHint) {
+        viewModelScope.launch {
+            try {
+                transcriptionService.setLanguageHint(hint)
+            } catch (e: Exception) {
+                logger.e(e) { "Failed to set language hint" }
+                _uiState.update { it.copy(error = "Failed to set language hint: ${e.message}") }
+            }
+        }
     }
 
     override fun clearError() {

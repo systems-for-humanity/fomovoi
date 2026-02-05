@@ -9,6 +9,7 @@ interface TranscriptionService {
     val events: Flow<TranscriptionEvent>
     val currentSpeaker: StateFlow<Speaker?>
     val currentLanguage: StateFlow<SpeechLanguage>
+    val currentLanguageHint: StateFlow<LanguageHint>
     val availableLanguages: List<SpeechLanguage>
 
     /**
@@ -30,6 +31,13 @@ interface TranscriptionService {
      * This will download the model if not already cached.
      */
     suspend fun setLanguage(language: SpeechLanguage)
+
+    /**
+     * Set the language hint for multilingual models.
+     * Has no effect on English-only models.
+     * @param hint The language to prioritize, or AUTO_DETECT for automatic detection.
+     */
+    suspend fun setLanguageHint(hint: LanguageHint)
 
     fun release()
 }
