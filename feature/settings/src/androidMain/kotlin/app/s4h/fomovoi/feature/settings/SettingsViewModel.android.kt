@@ -8,11 +8,13 @@ import app.s4h.fomovoi.core.transcription.ModelManager
 import app.s4h.fomovoi.core.transcription.SpeechModel
 import app.s4h.fomovoi.core.transcription.SpeechModelType
 import app.s4h.fomovoi.core.transcription.TranscriptionService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
@@ -59,9 +61,14 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
                 _uiState.update { it.copy(error = "Discovering available models...") }
                 modelManager.discoverModels()
 
-                val models = modelManager.getAvailableModels()
-                val selectedId = modelManager.getSelectedModelId()
-                val storageUsed = modelManager.getTotalStorageUsed() / 1_000_000
+                // Run disk I/O on background thread
+                val (models, selectedId, storageUsed) = withContext(Dispatchers.IO) {
+                    Triple(
+                        modelManager.getAvailableModels(),
+                        modelManager.getSelectedModelId(),
+                        modelManager.getTotalStorageUsed() / 1_000_000
+                    )
+                }
 
                 _uiState.update {
                     it.copy(
@@ -91,7 +98,9 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
     override fun deleteModel(model: SpeechModel) {
         viewModelScope.launch {
             try {
-                modelManager.deleteModel(model)
+                withContext(Dispatchers.IO) {
+                    modelManager.deleteModel(model)
+                }
                 // If this was the selected model, clear selection
                 if (_uiState.value.selectedModelId == model.id) {
                     _uiState.update { it.copy(selectedModelId = null) }

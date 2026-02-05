@@ -32,6 +32,7 @@ class FomovoiApplication : Application() {
                 .detectDiskWrites()
                 .detectNetwork()
                 .penaltyLog()
+                .penaltyFlashScreen()
                 .build()
         )
 

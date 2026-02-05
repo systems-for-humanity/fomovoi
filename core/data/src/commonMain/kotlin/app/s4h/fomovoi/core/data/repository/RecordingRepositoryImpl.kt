@@ -10,8 +10,10 @@ import app.s4h.fomovoi.core.domain.model.Recording
 import app.s4h.fomovoi.core.domain.usecase.RecordingRepository
 import app.s4h.fomovoi.core.transcription.TranscriptionResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Instant
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -38,7 +40,7 @@ class RecordingRepositoryImpl(
             .map { it?.toRecording() }
     }
 
-    override suspend fun saveRecording(recording: Recording) {
+    override suspend fun saveRecording(recording: Recording) = withContext(Dispatchers.IO) {
         logger.d { "Saving recording: ${recording.id}" }
         queries.insert(
             id = recording.id,
@@ -52,12 +54,12 @@ class RecordingRepositoryImpl(
         )
     }
 
-    override suspend fun deleteRecording(id: String) {
+    override suspend fun deleteRecording(id: String) = withContext(Dispatchers.IO) {
         logger.d { "Deleting recording: $id" }
         queries.deleteById(id)
     }
 
-    override suspend fun updateRecording(recording: Recording) {
+    override suspend fun updateRecording(recording: Recording) = withContext(Dispatchers.IO) {
         logger.d { "Updating recording: ${recording.id}" }
         queries.update(
             id = recording.id,
