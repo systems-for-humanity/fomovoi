@@ -155,6 +155,7 @@ fun RecordingScreen(
                 utterances = uiState.utterances,
                 partialText = uiState.partialText,
                 currentSpeaker = uiState.currentSpeaker?.label,
+                isRecording = uiState.isRecording,
                 listState = listState,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -270,6 +271,7 @@ private fun TranscriptionDisplay(
     utterances: List<Utterance>,
     partialText: String,
     currentSpeaker: String?,
+    isRecording: Boolean,
     listState: androidx.compose.foundation.lazy.LazyListState,
     modifier: Modifier = Modifier
 ) {
@@ -277,7 +279,7 @@ private fun TranscriptionDisplay(
         shape = RoundedCornerShape(16.dp),
         modifier = modifier
     ) {
-        if (utterances.isEmpty() && partialText.isBlank()) {
+        if (utterances.isEmpty() && partialText.isBlank() && !isRecording) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -286,6 +288,19 @@ private fun TranscriptionDisplay(
             ) {
                 Text(
                     text = "Tap the microphone to start recording",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else if (utterances.isEmpty() && partialText.isBlank() && isRecording) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "Listening...",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
