@@ -66,6 +66,12 @@ class AndroidTranscriptionService(
     private val _currentSpeaker = MutableStateFlow<Speaker?>(null)
     override val currentSpeaker: StateFlow<Speaker?> = _currentSpeaker.asStateFlow()
 
+    private val _currentLanguage = MutableStateFlow(SpeechLanguage.ENGLISH)
+    override val currentLanguage: StateFlow<SpeechLanguage> = _currentLanguage.asStateFlow()
+
+    // Android SpeechRecognizer uses system language, limited language selection
+    override val availableLanguages: List<SpeechLanguage> = listOf(SpeechLanguage.ENGLISH)
+
     private val speakers = mutableMapOf<String, Speaker>()
 
     override suspend fun initialize() {
@@ -332,6 +338,13 @@ class AndroidTranscriptionService(
                 _currentSpeaker.value = updated
             }
         }
+    }
+
+    override suspend fun setLanguage(language: SpeechLanguage) {
+        // Android SpeechRecognizer uses system language
+        // For full language support, use SherpaOnnxTranscriptionService
+        _currentLanguage.value = language
+        _events.emit(TranscriptionEvent.Error("Language selection requires Sherpa-ONNX service"))
     }
 
     fun switchSpeaker() {

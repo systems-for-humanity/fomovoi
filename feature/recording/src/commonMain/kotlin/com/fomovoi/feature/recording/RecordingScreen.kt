@@ -29,7 +29,10 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -43,13 +46,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.fomovoi.core.transcription.SpeechLanguage
 import com.fomovoi.core.transcription.Utterance
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -101,6 +107,17 @@ fun RecordingScreen(
                 .padding(paddingValues)
                 .padding(16.dp)
         ) {
+            // Language selector
+            LanguageSelector(
+                currentLanguage = uiState.currentLanguage,
+                availableLanguages = uiState.availableLanguages,
+                onLanguageSelected = viewModel::setLanguage,
+                enabled = !uiState.isRecording,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // Timer display
             TimerDisplay(
                 formattedTime = uiState.formattedTime,
@@ -140,6 +157,73 @@ fun RecordingScreen(
                 onShare = viewModel::shareTranscription,
                 modifier = Modifier.fillMaxWidth()
             )
+        }
+    }
+}
+
+@Composable
+private fun LanguageSelector(
+    currentLanguage: SpeechLanguage,
+    availableLanguages: List<SpeechLanguage>,
+    onLanguageSelected: (SpeechLanguage) -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        Card(
+            onClick = { if (enabled) expanded = true },
+            enabled = enabled,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Language,
+                    contentDescription = null,
+                    tint = if (enabled) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    }
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = currentLanguage.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (enabled) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    }
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            availableLanguages.forEach { language ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = language.displayName,
+                            fontWeight = if (language == currentLanguage) FontWeight.Bold else FontWeight.Normal
+                        )
+                    },
+                    onClick = {
+                        onLanguageSelected(language)
+                        expanded = false
+                    }
+                )
+            }
         }
     }
 }

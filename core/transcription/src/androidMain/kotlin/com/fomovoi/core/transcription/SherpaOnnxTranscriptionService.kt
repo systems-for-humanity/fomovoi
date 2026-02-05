@@ -33,8 +33,7 @@ import java.util.UUID
 
 /**
  * Transcription service using Sherpa-ONNX for continuous, on-device speech recognition.
- * Uses streaming Zipformer transducer model for real-time transcription.
- * Models are downloaded on first use (~122MB total).
+ * Supports multiple languages with models downloaded on first use.
  */
 fun createSherpaOnnxTranscriptionService(context: Context): TranscriptionService {
     return SherpaOnnxTranscriptionService(context)
@@ -46,23 +45,14 @@ class SherpaOnnxTranscriptionService(
 
     companion object {
         private const val TAG = "SherpaOnnxTranscription"
-        private const val MODEL_DIR = "sherpa-onnx-models"
-        private const val MODEL_BASE_URL = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-02-21/resolve/main"
-
-        // Model files with expected sizes for verification
-        // Using non-quantized models for better accuracy (~296MB total)
-        private val MODEL_FILES = listOf(
-            ModelFile("encoder-epoch-99-avg-1.onnx", 292_543_537L),
-            ModelFile("decoder-epoch-99-avg-1.onnx", 2_093_080L),
-            ModelFile("joiner-epoch-99-avg-1.onnx", 1_026_462L),
-            ModelFile("tokens.txt", 5_048L)
-        )
-
-        private data class ModelFile(val name: String, val expectedSize: Long)
+        private const val MODELS_BASE_DIR = "sherpa-onnx-models"
+        private const val PREFS_NAME = "transcription_prefs"
+        private const val PREF_LANGUAGE = "selected_language"
     }
 
     private val logger = Logger.withTag("SherpaOnnxTranscriptionService")
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private var recognizer: OnlineRecognizer? = null
     private var stream: OnlineStream? = null
@@ -79,10 +69,23 @@ class SherpaOnnxTranscriptionService(
     private val _currentSpeaker = MutableStateFlow<Speaker?>(null)
     override val currentSpeaker: StateFlow<Speaker?> = _currentSpeaker.asStateFlow()
 
+    private val _currentLanguage = MutableStateFlow(loadSavedLanguage())
+    override val currentLanguage: StateFlow<SpeechLanguage> = _currentLanguage.asStateFlow()
+
+    override val availableLanguages: List<SpeechLanguage> = SpeechLanguage.entries
+
     private val speakers = mutableMapOf<String, Speaker>()
 
-    // Sherpa-ONNX handles audio capture externally via processAudioChunk
     override val handlesAudioInternally: Boolean = false
+
+    private fun loadSavedLanguage(): SpeechLanguage {
+        val code = prefs.getString(PREF_LANGUAGE, null)
+        return code?.let { SpeechLanguage.fromCode(it) } ?: SpeechLanguage.default
+    }
+
+    private fun saveLanguage(language: SpeechLanguage) {
+        prefs.edit().putString(PREF_LANGUAGE, language.code).apply()
+    }
 
     override suspend fun initialize() {
         Log.d(TAG, "initialize() called")
@@ -90,26 +93,11 @@ class SherpaOnnxTranscriptionService(
         _state.value = TranscriptionState.INITIALIZING
 
         try {
-            val modelDir = File(context.filesDir, MODEL_DIR)
-
-            // Check if models need to be downloaded
-            if (!areModelsReady(modelDir)) {
-                Log.d(TAG, "Models not found or incomplete, downloading...")
-                downloadModels(modelDir)
-            }
-
-            // Initialize recognizer
-            val config = createRecognizerConfig(modelDir)
-            recognizer = OnlineRecognizer(config = config)
-            Log.d(TAG, "OnlineRecognizer created")
-
-            // Initialize default speaker
-            val defaultSpeaker = Speaker(id = "speaker_1", label = "Speaker 1")
-            speakers[defaultSpeaker.id] = defaultSpeaker
-            _currentSpeaker.value = defaultSpeaker
+            val language = _currentLanguage.value
+            initializeForLanguage(language)
 
             _state.value = TranscriptionState.READY
-            Log.d(TAG, "Sherpa-ONNX transcription service initialized")
+            Log.d(TAG, "Sherpa-ONNX transcription service initialized for ${language.displayName}")
             logger.d { "Transcription service initialized" }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize: ${e.message}", e)
@@ -119,19 +107,66 @@ class SherpaOnnxTranscriptionService(
         }
     }
 
-    private fun areModelsReady(modelDir: File): Boolean {
+    private suspend fun initializeForLanguage(language: SpeechLanguage) {
+        val modelDir = File(context.filesDir, "$MODELS_BASE_DIR/${language.modelId}")
+
+        if (!areModelsReady(modelDir, language)) {
+            Log.d(TAG, "Models not found or incomplete for ${language.displayName}, downloading...")
+            downloadModels(modelDir, language)
+        }
+
+        // Release existing recognizer if any
+        recognizer?.release()
+        recognizer = null
+
+        val config = createRecognizerConfig(modelDir, language)
+        recognizer = OnlineRecognizer(config = config)
+        Log.d(TAG, "OnlineRecognizer created for ${language.displayName}")
+
+        // Initialize default speaker
+        val defaultSpeaker = Speaker(id = "speaker_1", label = "Speaker 1")
+        speakers[defaultSpeaker.id] = defaultSpeaker
+        _currentSpeaker.value = defaultSpeaker
+    }
+
+    override suspend fun setLanguage(language: SpeechLanguage) {
+        if (language == _currentLanguage.value) return
+
+        Log.d(TAG, "Switching language to ${language.displayName}")
+        val wasTranscribing = _state.value == TranscriptionState.TRANSCRIBING
+
+        if (wasTranscribing) {
+            stopTranscription()
+        }
+
+        _state.value = TranscriptionState.INITIALIZING
+        _currentLanguage.value = language
+        saveLanguage(language)
+
+        try {
+            initializeForLanguage(language)
+            _state.value = TranscriptionState.READY
+            _events.emit(TranscriptionEvent.Error("Switched to ${language.displayName}"))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to switch language: ${e.message}", e)
+            _state.value = TranscriptionState.ERROR
+            _events.emit(TranscriptionEvent.Error("Failed to switch language: ${e.message}"))
+        }
+    }
+
+    private fun areModelsReady(modelDir: File, language: SpeechLanguage): Boolean {
         if (!modelDir.exists()) return false
-        return MODEL_FILES.all { modelFile ->
+        return language.modelFiles.all { modelFile ->
             val file = File(modelDir, modelFile.name)
             file.exists() && file.length() == modelFile.expectedSize
         }
     }
 
-    private suspend fun downloadModels(modelDir: File) = withContext(Dispatchers.IO) {
+    private suspend fun downloadModels(modelDir: File, language: SpeechLanguage) = withContext(Dispatchers.IO) {
         modelDir.mkdirs()
 
         // Clean up any partial downloads
-        MODEL_FILES.forEach { modelFile ->
+        language.modelFiles.forEach { modelFile ->
             val file = File(modelDir, modelFile.name)
             if (file.exists() && file.length() != modelFile.expectedSize) {
                 Log.d(TAG, "Removing incomplete file: ${modelFile.name}")
@@ -139,20 +174,23 @@ class SherpaOnnxTranscriptionService(
             }
         }
 
-        val totalSize = MODEL_FILES.sumOf { it.expectedSize }
+        val totalSize = language.totalSize
         var downloadedSize = 0L
 
-        MODEL_FILES.forEach { modelFile ->
+        language.modelFiles.forEach { modelFile ->
             val file = File(modelDir, modelFile.name)
             if (!file.exists()) {
                 Log.d(TAG, "Downloading ${modelFile.name}...")
                 val progressPercent = (downloadedSize * 100 / totalSize).toInt()
+                val sizeMB = totalSize / 1_000_000
                 scope.launch {
-                    _events.emit(TranscriptionEvent.Error("Downloading speech model: $progressPercent% (${modelFile.name})"))
+                    _events.emit(TranscriptionEvent.Error(
+                        "Downloading ${language.displayName} model: $progressPercent% (~${sizeMB}MB)"
+                    ))
                 }
 
                 downloadFile(
-                    url = "$MODEL_BASE_URL/${modelFile.name}",
+                    url = "${language.baseUrl}/${modelFile.name}",
                     destination = file,
                     expectedSize = modelFile.expectedSize
                 )
@@ -163,7 +201,7 @@ class SherpaOnnxTranscriptionService(
         }
 
         scope.launch {
-            _events.emit(TranscriptionEvent.Error("Speech model ready"))
+            _events.emit(TranscriptionEvent.Error("${language.displayName} model ready"))
         }
     }
 
@@ -193,7 +231,6 @@ class SherpaOnnxTranscriptionService(
                 }
             }
 
-            // Rename temp file to final destination
             if (!tempFile.renameTo(destination)) {
                 throw Exception("Failed to rename temp file")
             }
@@ -204,14 +241,14 @@ class SherpaOnnxTranscriptionService(
         }
     }
 
-    private fun createRecognizerConfig(modelDir: File): OnlineRecognizerConfig {
+    private fun createRecognizerConfig(modelDir: File, language: SpeechLanguage): OnlineRecognizerConfig {
         val modelConfig = OnlineModelConfig(
             transducer = OnlineTransducerModelConfig(
-                encoder = File(modelDir, "encoder-epoch-99-avg-1.onnx").absolutePath,
-                decoder = File(modelDir, "decoder-epoch-99-avg-1.onnx").absolutePath,
-                joiner = File(modelDir, "joiner-epoch-99-avg-1.onnx").absolutePath
+                encoder = File(modelDir, language.encoderFile.name).absolutePath,
+                decoder = File(modelDir, language.decoderFile.name).absolutePath,
+                joiner = File(modelDir, language.joinerFile.name).absolutePath
             ),
-            tokens = File(modelDir, "tokens.txt").absolutePath,
+            tokens = File(modelDir, language.tokensFile.name).absolutePath,
             numThreads = 2,
             debug = false,
             provider = "cpu",
@@ -247,12 +284,11 @@ class SherpaOnnxTranscriptionService(
             return
         }
 
-        Log.d(TAG, "Starting transcription")
+        Log.d(TAG, "Starting transcription in ${_currentLanguage.value.displayName}")
         utterances.clear()
         lastText = ""
         sessionStartTime = System.currentTimeMillis()
 
-        // Create new stream for this session
         stream = recognizer?.createStream()
         Log.d(TAG, "Created new stream: ${stream != null}")
 
@@ -265,7 +301,6 @@ class SherpaOnnxTranscriptionService(
 
         if (_state.value != TranscriptionState.TRANSCRIBING) return
 
-        // Convert ByteArray to FloatArray (16-bit PCM to float)
         val samples = FloatArray(chunk.data.size / 2)
         for (i in samples.indices) {
             val low = chunk.data[i * 2].toInt() and 0xFF
@@ -274,15 +309,12 @@ class SherpaOnnxTranscriptionService(
             samples[i] = sample / 32768.0f
         }
 
-        // Feed audio to recognizer
         currentStream.acceptWaveform(samples, chunk.sampleRate)
 
-        // Process while ready
         while (currentRecognizer.isReady(currentStream)) {
             currentRecognizer.decode(currentStream)
         }
 
-        // Get current result
         val result = currentRecognizer.getResult(currentStream)
         val text = result.text.trim()
 
@@ -293,7 +325,6 @@ class SherpaOnnxTranscriptionService(
             }
         }
 
-        // Check for endpoint (sentence completion)
         if (currentRecognizer.isEndpoint(currentStream)) {
             if (text.isNotEmpty()) {
                 Log.d(TAG, "Final result: $text")
@@ -304,7 +335,7 @@ class SherpaOnnxTranscriptionService(
                     id = UUID.randomUUID().toString(),
                     text = text,
                     speaker = speaker,
-                    startTimeMs = currentTime - 1000, // Approximate
+                    startTimeMs = currentTime - 1000,
                     endTimeMs = currentTime
                 )
                 utterances.add(utterance)
@@ -314,7 +345,6 @@ class SherpaOnnxTranscriptionService(
                 }
             }
 
-            // Reset stream for next utterance
             currentRecognizer.reset(currentStream)
             lastText = ""
         } else {
@@ -326,7 +356,6 @@ class SherpaOnnxTranscriptionService(
         Log.d(TAG, "stopTranscription() called, utterances.size=${utterances.size}")
         logger.d { "Stopping transcription" }
 
-        // Get any remaining text
         val currentStream = stream
         val currentRecognizer = recognizer
         if (currentStream != null && currentRecognizer != null && lastText.isNotEmpty()) {

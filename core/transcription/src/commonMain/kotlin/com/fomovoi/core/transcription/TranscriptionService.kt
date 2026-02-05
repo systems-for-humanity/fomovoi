@@ -8,6 +8,8 @@ interface TranscriptionService {
     val state: StateFlow<TranscriptionState>
     val events: Flow<TranscriptionEvent>
     val currentSpeaker: StateFlow<Speaker?>
+    val currentLanguage: StateFlow<SpeechLanguage>
+    val availableLanguages: List<SpeechLanguage>
 
     /**
      * Whether this transcription service handles audio input internally.
@@ -22,6 +24,13 @@ interface TranscriptionService {
     suspend fun processAudioChunk(chunk: AudioChunk)
     suspend fun stopTranscription(): TranscriptionResult?
     suspend fun setSpeakerLabel(speakerId: String, label: String)
+
+    /**
+     * Change the speech recognition language.
+     * This will download the model if not already cached.
+     */
+    suspend fun setLanguage(language: SpeechLanguage)
+
     fun release()
 }
 

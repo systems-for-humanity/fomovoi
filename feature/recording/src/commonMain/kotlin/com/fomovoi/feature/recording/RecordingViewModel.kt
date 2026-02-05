@@ -9,6 +9,7 @@ import com.fomovoi.core.domain.model.Recording
 import com.fomovoi.core.domain.usecase.SaveRecordingUseCase
 import com.fomovoi.core.sharing.ShareService
 import com.fomovoi.core.transcription.Speaker
+import com.fomovoi.core.transcription.SpeechLanguage
 import com.fomovoi.core.transcription.TranscriptionEvent
 import com.fomovoi.core.transcription.TranscriptionResult
 import com.fomovoi.core.transcription.TranscriptionService
@@ -25,6 +26,8 @@ data class RecordingUiState(
     val recordingState: RecordingState = RecordingState.IDLE,
     val transcriptionState: TranscriptionState = TranscriptionState.IDLE,
     val currentSpeaker: Speaker? = null,
+    val currentLanguage: SpeechLanguage = SpeechLanguage.ENGLISH,
+    val availableLanguages: List<SpeechLanguage> = emptyList(),
     val partialText: String = "",
     val utterances: List<Utterance> = emptyList(),
     val elapsedTimeMs: Long = 0,
@@ -79,6 +82,7 @@ class RecordingViewModel(
         observeAudioState()
         observeTranscriptionState()
         observeTranscriptionEvents()
+        observeLanguage()
     }
 
     private fun observeAudioState() {
@@ -99,6 +103,17 @@ class RecordingViewModel(
         viewModelScope.launch {
             transcriptionService.currentSpeaker.collect { speaker ->
                 _uiState.update { it.copy(currentSpeaker = speaker) }
+            }
+        }
+    }
+
+    private fun observeLanguage() {
+        // Set available languages immediately
+        _uiState.update { it.copy(availableLanguages = transcriptionService.availableLanguages) }
+
+        viewModelScope.launch {
+            transcriptionService.currentLanguage.collect { language ->
+                _uiState.update { it.copy(currentLanguage = language) }
             }
         }
     }
@@ -294,6 +309,17 @@ class RecordingViewModel(
 
     fun clearError() {
         _uiState.update { it.copy(error = null) }
+    }
+
+    fun setLanguage(language: SpeechLanguage) {
+        viewModelScope.launch {
+            try {
+                transcriptionService.setLanguage(language)
+            } catch (e: Exception) {
+                logger.e(e) { "Failed to set language" }
+                _uiState.update { it.copy(error = "Failed to change language: ${e.message}") }
+            }
+        }
     }
 
     override fun onCleared() {
