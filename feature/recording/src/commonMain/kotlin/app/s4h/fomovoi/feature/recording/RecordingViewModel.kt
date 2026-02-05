@@ -8,7 +8,9 @@ import app.s4h.fomovoi.core.audio.RecordingState
 import app.s4h.fomovoi.core.domain.model.Recording
 import app.s4h.fomovoi.core.domain.usecase.SaveRecordingUseCase
 import app.s4h.fomovoi.core.domain.usecase.UpdateRecordingUseCase
+import app.s4h.fomovoi.core.sharing.ShareResult
 import app.s4h.fomovoi.core.sharing.ShareService
+import app.s4h.fomovoi.feature.settings.EmailSettingsRepository
 import app.s4h.fomovoi.core.transcription.Speaker
 import app.s4h.fomovoi.core.transcription.SpeechLanguage
 import app.s4h.fomovoi.core.transcription.TranscriptionEvent
@@ -69,7 +71,8 @@ class RecordingViewModel(
     private val shareService: ShareService,
     private val saveRecordingUseCase: SaveRecordingUseCase,
     private val updateRecordingUseCase: UpdateRecordingUseCase,
-    private val titlePrefixRepository: TitlePrefixRepository
+    private val titlePrefixRepository: TitlePrefixRepository,
+    private val emailSettingsRepository: EmailSettingsRepository
 ) : ViewModel() {
 
     private val logger = Logger.withTag("RecordingViewModel")
@@ -339,6 +342,9 @@ class RecordingViewModel(
                         isComplete = true
                     )
                     saveFinalRecording(recordingId, finalTranscription)
+
+                    // Auto-email if enabled
+                    sendAutoEmail(finalTranscription)
                 }
                 currentRecordingId = null
             } catch (e: Exception) {
@@ -360,6 +366,34 @@ class RecordingViewModel(
             durationMs = transcription.durationMs
         )
         updateRecordingUseCase(recording)
+    }
+
+    private suspend fun sendAutoEmail(transcription: TranscriptionResult) {
+        val autoEmailEnabled = emailSettingsRepository.autoEmailEnabled.value
+        val emailAddress = emailSettingsRepository.emailAddress.value
+
+        if (!autoEmailEnabled || emailAddress.isBlank()) {
+            logger.d { "Auto-email disabled or no email address configured" }
+            return
+        }
+
+        logger.d { "Sending auto-email to: $emailAddress" }
+        val title = _uiState.value.selectedTitlePrefix
+        val subject = "fomovoi: $title"
+        val body = buildTranscriptionText()
+
+        when (val result = shareService.sendEmail(emailAddress, subject, body)) {
+            is ShareResult.Success -> {
+                logger.d { "Auto-email opened successfully" }
+            }
+            is ShareResult.Error -> {
+                logger.e { "Auto-email failed: ${result.message}" }
+                _uiState.update { it.copy(error = "Failed to send email: ${result.message}") }
+            }
+            is ShareResult.Cancelled -> {
+                logger.d { "Auto-email cancelled" }
+            }
+        }
     }
 
     fun shareTranscription() {

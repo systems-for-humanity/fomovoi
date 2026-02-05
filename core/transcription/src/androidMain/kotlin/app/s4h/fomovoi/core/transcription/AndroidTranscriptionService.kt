@@ -72,6 +72,9 @@ class AndroidTranscriptionService(
     private val _currentLanguageHint = MutableStateFlow(LanguageHint.AUTO_DETECT)
     override val currentLanguageHint: StateFlow<LanguageHint> = _currentLanguageHint.asStateFlow()
 
+    private val _translateToEnglish = MutableStateFlow(true)
+    override val translateToEnglish: StateFlow<Boolean> = _translateToEnglish.asStateFlow()
+
     // Android SpeechRecognizer uses system language, limited language selection
     override val availableLanguages: List<SpeechLanguage> = listOf(SpeechLanguage.ENGLISH)
 
@@ -354,6 +357,12 @@ class AndroidTranscriptionService(
         // Android SpeechRecognizer doesn't support language hints
         // This is only applicable to Whisper models in SherpaOnnxTranscriptionService
         _currentLanguageHint.value = hint
+    }
+
+    override suspend fun setTranslateToEnglish(translate: Boolean) {
+        // Android SpeechRecognizer doesn't support translation
+        // This is only applicable to Whisper models in SherpaOnnxTranscriptionService
+        _translateToEnglish.value = translate
     }
 
     fun switchSpeaker() {

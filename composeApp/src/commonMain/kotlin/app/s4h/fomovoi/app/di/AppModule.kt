@@ -47,7 +47,8 @@ val commonModule = module {
             shareService = get(),
             saveRecordingUseCase = get(),
             updateRecordingUseCase = get(),
-            titlePrefixRepository = get()
+            titlePrefixRepository = get(),
+            emailSettingsRepository = get()
         )
     }
 

@@ -21,6 +21,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,9 +32,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -108,6 +112,26 @@ fun SettingsScreen(
                         onHintSelected = viewModel::setLanguageHint
                     )
                 }
+            }
+
+            // Translate to English toggle (only for non-English models)
+            if (uiState.showTranslateOption) {
+                item {
+                    TranslateToEnglishCard(
+                        translateToEnglish = uiState.translateToEnglish,
+                        onTranslateChanged = viewModel::setTranslateToEnglish
+                    )
+                }
+            }
+
+            // Auto-email settings
+            item {
+                AutoEmailCard(
+                    enabled = uiState.autoEmailEnabled,
+                    emailAddress = uiState.autoEmailAddress,
+                    onEnabledChanged = viewModel::setAutoEmailEnabled,
+                    onEmailAddressChanged = viewModel::setAutoEmailAddress
+                )
             }
 
             // Filter chips
@@ -282,6 +306,51 @@ private fun LanguageHintCard(
 }
 
 @Composable
+private fun TranslateToEnglishCard(
+    translateToEnglish: Boolean,
+    onTranslateChanged: (Boolean) -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Translate,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Translate to English",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = if (translateToEnglish) {
+                        "Speech will be translated to English"
+                    } else {
+                        "Speech will be transcribed in original language"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = translateToEnglish,
+                onCheckedChange = onTranslateChanged
+            )
+        }
+    }
+}
+
+@Composable
 private fun ModelFilterChips(
     selectedFilter: SpeechModelType?,
     onFilterSelected: (SpeechModelType?) -> Unit
@@ -423,6 +492,65 @@ private fun ModelCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun AutoEmailCard(
+    enabled: Boolean,
+    emailAddress: String,
+    onEnabledChanged: (Boolean) -> Unit,
+    onEmailAddressChanged: (String) -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Email,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Auto-Email",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Open email when recording stops",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onEnabledChanged
+                )
+            }
+
+            AnimatedVisibility(visible = enabled) {
+                Column {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = emailAddress,
+                        onValueChange = onEmailAddressChanged,
+                        label = { Text("Email Address") },
+                        placeholder = { Text("recipient@example.com") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
         }
     }
 }

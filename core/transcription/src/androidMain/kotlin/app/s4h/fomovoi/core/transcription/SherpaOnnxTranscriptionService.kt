@@ -48,6 +48,7 @@ class SherpaOnnxTranscriptionService(
         private const val TAG = "SherpaOnnxTranscription"
         private const val PREFS_NAME = "transcription_prefs"
         private const val PREF_LANGUAGE_HINT = "language_hint"
+        private const val PREF_TRANSLATE_TO_ENGLISH = "translate_to_english"
         private const val SAMPLE_RATE = 16000
         private const val CHUNK_DURATION_SECS = 28 // Whisper handles ~30s max, use 28s for safety
     }
@@ -92,6 +93,9 @@ class SherpaOnnxTranscriptionService(
     private val _currentLanguageHint = MutableStateFlow(LanguageHint.AUTO_DETECT)
     override val currentLanguageHint: StateFlow<LanguageHint> = _currentLanguageHint.asStateFlow()
 
+    private val _translateToEnglish = MutableStateFlow(true)
+    override val translateToEnglish: StateFlow<Boolean> = _translateToEnglish.asStateFlow()
+
     override val availableLanguages: List<SpeechLanguage> = SpeechLanguage.entries
 
     private val speakers = mutableMapOf<String, Speaker>()
@@ -118,6 +122,25 @@ class SherpaOnnxTranscriptionService(
         prefs.edit().putString(PREF_LANGUAGE_HINT, hint.code).apply()
     }
 
+    private var translateSettingLoaded = false
+
+    private fun loadTranslateSetting(): Boolean {
+        if (!translateSettingLoaded) {
+            translateSettingLoaded = true
+            val oldPolicy = StrictMode.allowThreadDiskReads()
+            try {
+                _translateToEnglish.value = prefs.getBoolean(PREF_TRANSLATE_TO_ENGLISH, true)
+            } finally {
+                StrictMode.setThreadPolicy(oldPolicy)
+            }
+        }
+        return _translateToEnglish.value
+    }
+
+    private fun saveTranslateSetting(translate: Boolean) {
+        prefs.edit().putBoolean(PREF_TRANSLATE_TO_ENGLISH, translate).apply()
+    }
+
     override suspend fun initialize() {
         Log.d(TAG, "initialize() called")
         logger.d { "Initializing Sherpa-ONNX Whisper transcription service" }
@@ -126,8 +149,9 @@ class SherpaOnnxTranscriptionService(
         try {
             // Run heavy initialization work off the main thread
             withContext(Dispatchers.IO) {
-                // Load language hint from prefs (disk I/O)
+                // Load settings from prefs (disk I/O)
                 loadLanguageHint()
+                loadTranslateSetting()
 
                 // First discover models from Hugging Face to get accurate file sizes
                 modelManager.discoverModels()
@@ -209,13 +233,21 @@ class SherpaOnnxTranscriptionService(
             _currentLanguageHint.value.code
         }
 
-        Log.d(TAG, "Creating Whisper config with language: '$whisperLanguage' (hint: ${_currentLanguageHint.value.displayName})")
+        // Determine task: translate to English or transcribe in original language
+        // Translation only applies to multilingual models
+        val whisperTask = if (model.language != SpeechLanguage.ENGLISH && _translateToEnglish.value) {
+            "translate"
+        } else {
+            "transcribe"
+        }
+
+        Log.d(TAG, "Creating Whisper config with language: '$whisperLanguage' (hint: ${_currentLanguageHint.value.displayName}), task: $whisperTask")
 
         val whisperConfig = OfflineWhisperModelConfig(
             encoder = File(modelDir, encoderName).absolutePath,
             decoder = File(modelDir, decoderName).absolutePath,
             language = whisperLanguage,
-            task = "transcribe"
+            task = whisperTask
         )
 
         val modelConfig = OfflineModelConfig(
@@ -290,6 +322,35 @@ class SherpaOnnxTranscriptionService(
                 Log.e(TAG, "Failed to reinitialize with new language hint: ${e.message}", e)
                 _state.value = TranscriptionState.ERROR
                 _events.emit(TranscriptionEvent.Error("Failed to apply language hint: ${e.message}"))
+            }
+        }
+    }
+
+    override suspend fun setTranslateToEnglish(translate: Boolean) {
+        Log.d(TAG, "Setting translate to English: $translate")
+        _translateToEnglish.value = translate
+        saveTranslateSetting(translate)
+
+        // Reinitialize recognizer if using a multilingual model to apply the new setting
+        val model = currentModel
+        if (model != null && model.language != SpeechLanguage.ENGLISH) {
+            val wasTranscribing = _state.value == TranscriptionState.TRANSCRIBING
+            if (wasTranscribing) {
+                stopTranscription()
+            }
+
+            _state.value = TranscriptionState.INITIALIZING
+            try {
+                withContext(Dispatchers.IO) {
+                    initializeWithModel(model)
+                }
+                _state.value = TranscriptionState.READY
+                val message = if (translate) "Translation to English enabled" else "Original language transcription enabled"
+                _events.emit(TranscriptionEvent.Error(message))
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to reinitialize with new translate setting: ${e.message}", e)
+                _state.value = TranscriptionState.ERROR
+                _events.emit(TranscriptionEvent.Error("Failed to apply translate setting: ${e.message}"))
             }
         }
     }

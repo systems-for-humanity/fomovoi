@@ -23,6 +23,7 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
     private val logger = Logger.withTag("SettingsViewModel")
     private val modelManager: ModelManager by inject()
     private val transcriptionService: TranscriptionService by inject()
+    private val emailSettingsRepository: EmailSettingsRepository by inject()
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     override val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -31,6 +32,8 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
         loadModels()
         observeDownloads()
         observeLanguageHint()
+        observeTranslateSetting()
+        observeAutoShareSettings()
     }
 
     private fun observeDownloads() {
@@ -50,6 +53,27 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
         viewModelScope.launch {
             transcriptionService.currentLanguageHint.collect { hint ->
                 _uiState.update { it.copy(languageHint = hint) }
+            }
+        }
+    }
+
+    private fun observeTranslateSetting() {
+        viewModelScope.launch {
+            transcriptionService.translateToEnglish.collect { translate ->
+                _uiState.update { it.copy(translateToEnglish = translate) }
+            }
+        }
+    }
+
+    private fun observeAutoShareSettings() {
+        viewModelScope.launch {
+            emailSettingsRepository.autoEmailEnabled.collect { enabled ->
+                _uiState.update { it.copy(autoEmailEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            emailSettingsRepository.emailAddress.collect { address ->
+                _uiState.update { it.copy(autoEmailAddress = address) }
             }
         }
     }
@@ -135,6 +159,25 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
                 _uiState.update { it.copy(error = "Failed to set language hint: ${e.message}") }
             }
         }
+    }
+
+    override fun setTranslateToEnglish(translate: Boolean) {
+        viewModelScope.launch {
+            try {
+                transcriptionService.setTranslateToEnglish(translate)
+            } catch (e: Exception) {
+                logger.e(e) { "Failed to set translate setting" }
+                _uiState.update { it.copy(error = "Failed to set translate setting: ${e.message}") }
+            }
+        }
+    }
+
+    override fun setAutoEmailEnabled(enabled: Boolean) {
+        emailSettingsRepository.setAutoEmailEnabled(enabled)
+    }
+
+    override fun setAutoEmailAddress(address: String) {
+        emailSettingsRepository.setEmailAddress(address)
     }
 
     override fun clearError() {

@@ -3,6 +3,7 @@ package app.s4h.fomovoi.core.sharing
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import co.touchlab.kermit.Logger
 import app.s4h.fomovoi.core.transcription.TranscriptionResult
 
@@ -88,6 +89,26 @@ class AndroidShareService(
                 null
             }
         }.distinctBy { it.packageName }
+    }
+
+    override suspend fun sendEmail(to: String, subject: String, body: String): ShareResult {
+        return try {
+            // Use mailto: URI with all parameters encoded in the URI itself
+            val mailtoUri = Uri.parse(
+                "mailto:$to?subject=${Uri.encode(subject)}&body=${Uri.encode(body)}"
+            )
+
+            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                data = mailtoUri
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            context.startActivity(intent)
+            ShareResult.Success
+        } catch (e: Exception) {
+            logger.e(e) { "Failed to send email" }
+            ShareResult.Error(e.message ?: "Failed to send email")
+        }
     }
 
     private fun formatDuration(durationMs: Long): String {

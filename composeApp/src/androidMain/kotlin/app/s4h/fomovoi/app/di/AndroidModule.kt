@@ -10,6 +10,8 @@ import app.s4h.fomovoi.core.transcription.TranscriptionService
 import app.s4h.fomovoi.core.transcription.createSherpaOnnxTranscriptionService
 import app.s4h.fomovoi.feature.recording.AndroidTitlePrefixRepository
 import app.s4h.fomovoi.feature.recording.TitlePrefixRepository
+import app.s4h.fomovoi.feature.settings.AndroidEmailSettingsRepository
+import app.s4h.fomovoi.feature.settings.EmailSettingsRepository
 import app.s4h.fomovoi.feature.settings.SettingsViewModel
 import app.s4h.fomovoi.feature.settings.SettingsViewModelInterface
 import org.koin.android.ext.koin.androidContext
@@ -28,6 +30,9 @@ val androidModule = module {
 
     // Title prefix repository
     single<TitlePrefixRepository> { AndroidTitlePrefixRepository(androidContext()) }
+
+    // Email settings repository
+    single<EmailSettingsRepository> { AndroidEmailSettingsRepository(androidContext()) }
 
     // ViewModels - register with interface type for KMP compatibility
     single<SettingsViewModelInterface> { SettingsViewModel() }

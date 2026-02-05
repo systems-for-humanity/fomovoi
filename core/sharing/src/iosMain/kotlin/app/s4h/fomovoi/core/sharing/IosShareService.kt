@@ -3,6 +3,7 @@ package app.s4h.fomovoi.core.sharing
 import co.touchlab.kermit.Logger
 import app.s4h.fomovoi.core.transcription.TranscriptionResult
 import kotlinx.cinterop.ExperimentalForeignApi
+import platform.Foundation.NSURL
 import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
 
@@ -63,6 +64,28 @@ class IosShareService : ShareService {
             ShareTarget(id = "mail", name = "Mail"),
             ShareTarget(id = "messages", name = "Messages")
         )
+    }
+
+    override suspend fun sendEmail(to: String, subject: String, body: String): ShareResult {
+        return try {
+            // Encode the mailto URL
+            val encodedSubject = subject.replace(" ", "%20")
+            val encodedBody = body.replace(" ", "%20").replace("\n", "%0A")
+            val mailtoUrl = "mailto:$to?subject=$encodedSubject&body=$encodedBody"
+
+            val url = NSURL.URLWithString(mailtoUrl)
+            if (url != null && UIApplication.sharedApplication.canOpenURL(url)) {
+                UIApplication.sharedApplication.openURL(url)
+                ShareResult.Success
+            } else {
+                // Fallback to share sheet
+                logger.w { "Cannot open mailto URL, falling back to share" }
+                shareText(body, subject)
+            }
+        } catch (e: Exception) {
+            logger.e(e) { "Failed to send email" }
+            ShareResult.Error(e.message ?: "Failed to send email")
+        }
     }
 
     private fun formatDuration(durationMs: Long): String {

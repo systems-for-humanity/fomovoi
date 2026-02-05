@@ -53,6 +53,9 @@ class IosTranscriptionService : TranscriptionService {
     private val _currentLanguageHint = MutableStateFlow(LanguageHint.AUTO_DETECT)
     override val currentLanguageHint: StateFlow<LanguageHint> = _currentLanguageHint.asStateFlow()
 
+    private val _translateToEnglish = MutableStateFlow(true)
+    override val translateToEnglish: StateFlow<Boolean> = _translateToEnglish.asStateFlow()
+
     override val availableLanguages: List<SpeechLanguage> = listOf(SpeechLanguage.ENGLISH)
 
     private val speakers = mutableMapOf<String, Speaker>()
@@ -240,6 +243,11 @@ class IosTranscriptionService : TranscriptionService {
     override suspend fun setLanguageHint(hint: LanguageHint) {
         // iOS SFSpeechRecognizer doesn't support Whisper language hints
         _currentLanguageHint.value = hint
+    }
+
+    override suspend fun setTranslateToEnglish(translate: Boolean) {
+        // iOS SFSpeechRecognizer doesn't support translation
+        _translateToEnglish.value = translate
     }
 
     fun switchSpeaker() {

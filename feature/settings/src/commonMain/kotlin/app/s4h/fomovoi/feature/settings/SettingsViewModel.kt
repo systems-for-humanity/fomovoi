@@ -14,13 +14,23 @@ data class SettingsUiState(
     val totalStorageUsedMB: Int = 0,
     val error: String? = null,
     val filterByType: SpeechModelType? = null,
-    val languageHint: LanguageHint = LanguageHint.AUTO_DETECT
+    val languageHint: LanguageHint = LanguageHint.AUTO_DETECT,
+    val translateToEnglish: Boolean = true,
+    val autoEmailEnabled: Boolean = false,
+    val autoEmailAddress: String = ""
 ) {
     val filteredModels: List<SpeechModel>
-        get() = if (filterByType != null) {
-            models.filter { it.type == filterByType }
-        } else {
-            models
+        get() {
+            val filtered = if (filterByType != null) {
+                models.filter { it.type == filterByType }
+            } else {
+                models
+            }
+            // Sort with downloaded models first, then by display name
+            return filtered.sortedWith(
+                compareByDescending<SpeechModel> { it.isDownloaded }
+                    .thenBy { it.displayName }
+            )
         }
 
     val downloadedModels: List<SpeechModel>
@@ -35,6 +45,13 @@ data class SettingsUiState(
      */
     val showLanguageHint: Boolean
         get() = selectedModel?.language == SpeechLanguage.MULTILINGUAL
+
+    /**
+     * Whether the translate to English option should be shown.
+     * Only relevant when a non-English (multilingual) model is selected.
+     */
+    val showTranslateOption: Boolean
+        get() = selectedModel?.language != null && selectedModel?.language != SpeechLanguage.ENGLISH
 }
 
 interface SettingsViewModelInterface {
@@ -46,5 +63,8 @@ interface SettingsViewModelInterface {
     fun selectModel(model: SpeechModel)
     fun setFilter(type: SpeechModelType?)
     fun setLanguageHint(hint: LanguageHint)
+    fun setTranslateToEnglish(translate: Boolean)
+    fun setAutoEmailEnabled(enabled: Boolean)
+    fun setAutoEmailAddress(address: String)
     fun clearError()
 }

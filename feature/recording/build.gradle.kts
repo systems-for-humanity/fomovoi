@@ -32,6 +32,7 @@ kotlin {
             implementation(project(":core:sharing"))
             implementation(project(":core:domain"))
             implementation(project(":core:data"))
+            implementation(project(":feature:settings"))
 
             implementation(compose.runtime)
             implementation(compose.foundation)
