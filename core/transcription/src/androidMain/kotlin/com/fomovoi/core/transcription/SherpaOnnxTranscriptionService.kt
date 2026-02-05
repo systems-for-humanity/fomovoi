@@ -90,31 +90,34 @@ class SherpaOnnxTranscriptionService(
         _state.value = TranscriptionState.INITIALIZING
 
         try {
-            // First discover models from Hugging Face to get accurate file sizes
-            modelManager.discoverModels()
+            // Run heavy initialization work off the main thread
+            withContext(Dispatchers.IO) {
+                // First discover models from Hugging Face to get accurate file sizes
+                modelManager.discoverModels()
 
-            val selectedModel = modelManager.getSelectedModel()
+                val selectedModel = modelManager.getSelectedModel()
 
-            if (selectedModel == null) {
-                Log.w(TAG, "No model selected, checking for downloaded models...")
-                // Try to find any downloaded Whisper model (prefer smaller models)
-                val availableModels = modelManager.getAvailableModels()
-                val downloadedWhisper = availableModels
-                    .filter { it.isDownloaded }
-                    .minByOrNull { it.totalSizeBytes }
+                if (selectedModel == null) {
+                    Log.w(TAG, "No model selected, checking for downloaded models...")
+                    // Try to find any downloaded Whisper model (prefer smaller models)
+                    val availableModels = modelManager.getAvailableModels()
+                    val downloadedWhisper = availableModels
+                        .filter { it.isDownloaded }
+                        .minByOrNull { it.totalSizeBytes }
 
-                if (downloadedWhisper != null) {
-                    Log.d(TAG, "Found downloaded model: ${downloadedWhisper.displayName}")
-                    modelManager.setSelectedModel(downloadedWhisper)
-                    initializeWithModel(downloadedWhisper)
+                    if (downloadedWhisper != null) {
+                        Log.d(TAG, "Found downloaded model: ${downloadedWhisper.displayName}")
+                        modelManager.setSelectedModel(downloadedWhisper)
+                        initializeWithModel(downloadedWhisper)
+                    } else {
+                        Log.w(TAG, "No Whisper model downloaded. Please download a model from Settings.")
+                        _state.value = TranscriptionState.ERROR
+                        _events.emit(TranscriptionEvent.Error("No model downloaded. Please download a model from Settings."))
+                        return@withContext
+                    }
                 } else {
-                    Log.w(TAG, "No Whisper model downloaded. Please download a model from Settings.")
-                    _state.value = TranscriptionState.ERROR
-                    _events.emit(TranscriptionEvent.Error("No model downloaded. Please download a model from Settings."))
-                    return
+                    initializeWithModel(selectedModel)
                 }
-            } else {
-                initializeWithModel(selectedModel)
             }
 
             _state.value = TranscriptionState.READY
