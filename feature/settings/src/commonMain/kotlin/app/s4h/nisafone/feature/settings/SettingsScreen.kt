@@ -402,17 +402,28 @@ private fun ModelCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    imageVector = Icons.Default.Language,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Language indicator: Globe icon for multilingual, EN text for English
+                if (model.language.code == "multi") {
+                    Icon(
+                        imageVector = Icons.Default.Language,
+                        contentDescription = "Multilingual",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = "EN",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                }
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = model.language.displayName,
+                            text = model.type.displayName,
                             style = MaterialTheme.typography.titleMedium
                         )
                         if (isSelected) {
@@ -426,7 +437,7 @@ private fun ModelCard(
                         }
                     }
                     Text(
-                        text = model.type.displayName,
+                        text = model.type.description,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -455,14 +466,12 @@ private fun ModelCard(
                         }
                     }
                     else -> {
-                        OutlinedButton(onClick = onDownload) {
+                        IconButton(onClick = onDownload) {
                             Icon(
                                 imageVector = Icons.Default.CloudDownload,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                contentDescription = "Download",
+                                tint = MaterialTheme.colorScheme.primary
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Download")
                         }
                     }
                 }
@@ -484,14 +493,6 @@ private fun ModelCard(
                     )
                 }
             }
-
-            // Model description
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = model.type.description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
