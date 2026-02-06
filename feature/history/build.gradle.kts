@@ -55,8 +55,8 @@ kotlin {
 }
 
 android {
-    namespace = "app.s4h.fomovoi.feature.history"
-    compileSdk = 35
+    namespace = "app.s4h.nisafone.feature.history"
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26

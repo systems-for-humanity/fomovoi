@@ -69,8 +69,8 @@ kotlin {
 }
 
 android {
-    namespace = "app.s4h.fomovoi.app"
-    compileSdk = 35
+    namespace = "app.s4h.nisafone.app"
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26

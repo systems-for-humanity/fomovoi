@@ -5,13 +5,13 @@ plugins {
 }
 
 android {
-    namespace = "app.s4h.fomovoi.android"
-    compileSdk = 35
+    namespace = "app.s4h.nisafone.android"
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.s4h.fomovoi.android"
+        applicationId = "app.s4h.nisafone.android"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
 

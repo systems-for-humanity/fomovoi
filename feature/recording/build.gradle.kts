@@ -58,8 +58,8 @@ kotlin {
 }
 
 android {
-    namespace = "app.s4h.fomovoi.feature.recording"
-    compileSdk = 35
+    namespace = "app.s4h.nisafone.feature.recording"
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26

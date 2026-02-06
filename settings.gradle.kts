@@ -1,4 +1,4 @@
-rootProject.name = "fomovoi"
+rootProject.name = "nisafone"
 
 pluginManagement {
     repositories {

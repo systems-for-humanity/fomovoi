@@ -48,8 +48,8 @@ kotlin {
 }
 
 android {
-    namespace = "app.s4h.fomovoi.core.data"
-    compileSdk = 35
+    namespace = "app.s4h.nisafone.core.data"
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
@@ -63,8 +63,8 @@ android {
 
 sqldelight {
     databases {
-        create("FomovoiDatabase") {
-            packageName.set("app.s4h.fomovoi.core.data.local")
+        create("NisafoneDatabase") {
+            packageName.set("app.s4h.nisafone.core.data.local")
         }
     }
 }

@@ -15,7 +15,7 @@
 }
 
 # Keep data classes
--keepclassmembers class com.fomovoi.** {
+-keepclassmembers class app.s4h.nisafone.** {
     <init>(...);
     <fields>;
 }

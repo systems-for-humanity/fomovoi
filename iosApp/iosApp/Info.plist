@@ -21,9 +21,9 @@
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Fomovoi needs access to the microphone to record and transcribe conversations.</string>
+    <string>Nisafone needs access to the microphone to record and transcribe conversations.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Fomovoi uses speech recognition to transcribe your recordings.</string>
+    <string>Nisafone uses speech recognition to transcribe your recordings.</string>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>

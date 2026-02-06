@@ -39,8 +39,8 @@ kotlin {
 }
 
 android {
-    namespace = "app.s4h.fomovoi.core.sharing"
-    compileSdk = 35
+    namespace = "app.s4h.nisafone.core.sharing"
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
