@@ -29,7 +29,7 @@ sqldelight = "2.0.2"
 kermit = "2.0.4"
 
 # Speech Recognition (Sherpa-ONNX via Maven Central wrapper)
-sherpa-onnx = "6.25.12"
+sherpa-onnx = "8.2.0"
 
 [libraries]
 # Kotlin
