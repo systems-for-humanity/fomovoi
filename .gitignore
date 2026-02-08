@@ -41,3 +41,6 @@ DerivedData/
 
 # Local config
 secrets.properties
+
+# Play Store assets (upload only, not committed)
+playstore-assets/
