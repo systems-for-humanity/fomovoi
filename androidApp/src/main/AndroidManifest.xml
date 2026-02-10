@@ -4,7 +4,7 @@
     <!-- Audio recording permissions -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Speech recognition (offline) -->
+    <!-- Network access for downloading models -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Foreground service for long recordings -->
@@ -39,6 +39,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service
+            android:name=".RecordingService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
     </application>
 
 </manifest>
