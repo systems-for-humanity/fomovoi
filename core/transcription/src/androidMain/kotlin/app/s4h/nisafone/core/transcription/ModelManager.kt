@@ -58,30 +58,127 @@ class ModelManager(private val context: Context) {
     /**
      * Discover available models from Hugging Face.
      * Results are cached after first call.
+     * When offline, falls back to catalog + any locally downloaded models.
      */
     suspend fun discoverModels(): List<SpeechModel> {
         discoveredModels?.let { return it }
 
         return try {
             val models = discoveryService.discoverModels()
-            discoveredModels = models
-            Log.d(TAG, "Discovered ${models.size} models from Hugging Face")
-            models
+            if (models.isEmpty()) {
+                // Discovery swallows network errors and returns empty list
+                Log.w(TAG, "Discovery returned no models, using offline fallback")
+                val fallback = buildOfflineFallback()
+                discoveredModels = fallback
+                fallback
+            } else {
+                discoveredModels = models
+                Log.d(TAG, "Discovered ${models.size} models from Hugging Face")
+                models
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to discover models, using fallback catalog: ${e.message}")
-            SpeechModelCatalog.allModels
+            val fallback = buildOfflineFallback()
+            discoveredModels = fallback
+            fallback
         }
+    }
+
+    /**
+     * Build a model list for offline use by combining the static catalog
+     * with any previously downloaded models found on disk.
+     */
+    private fun buildOfflineFallback(): List<SpeechModel> {
+        val catalogModels = SpeechModelCatalog.allModels.associateBy { it.id }.toMutableMap()
+
+        // Scan the models directory for downloaded models not in the catalog
+        if (modelsBaseDir.exists()) {
+            modelsBaseDir.listFiles()?.filter { it.isDirectory }?.forEach { dir ->
+                val modelId = dir.name
+                if (modelId !in catalogModels) {
+                    val model = reconstructModelFromDisk(modelId, dir)
+                    if (model != null) {
+                        catalogModels[modelId] = model
+                        Log.d(TAG, "Found offline model: ${model.displayName}")
+                    }
+                }
+            }
+        }
+
+        return catalogModels.values.toList()
+    }
+
+    /**
+     * Reconstruct a SpeechModel from its on-disk directory.
+     * Parses the model ID to determine type and language.
+     */
+    private fun reconstructModelFromDisk(modelId: String, dir: File): SpeechModel? {
+        // Model IDs follow the pattern: whisper-{size}[.{lang}]
+        val suffix = modelId.removePrefix("whisper-")
+        if (suffix == modelId) return null // not a whisper model
+
+        val isEnglish = suffix.endsWith(".en")
+        val language = if (isEnglish) SpeechLanguage.ENGLISH else SpeechLanguage.MULTILINGUAL
+        val sizeStr = if (isEnglish) suffix.removeSuffix(".en") else suffix
+
+        val type = when {
+            sizeStr == "tiny" -> SpeechModelType.WHISPER_TINY
+            sizeStr == "base" -> SpeechModelType.WHISPER_BASE
+            sizeStr == "small" -> SpeechModelType.WHISPER_SMALL
+            sizeStr == "medium" -> SpeechModelType.WHISPER_MEDIUM
+            sizeStr.startsWith("large") -> SpeechModelType.WHISPER_LARGE
+            sizeStr == "turbo" -> SpeechModelType.WHISPER_TURBO
+            sizeStr.startsWith("distil") -> SpeechModelType.WHISPER_DISTIL
+            else -> SpeechModelType.WHISPER_OTHER
+        }
+
+        val files = dir.listFiles()
+            ?.filter { it.isFile && !it.name.endsWith(".tmp") }
+            ?.map { ModelFile(it.name, it.length()) }
+            ?: return null
+
+        if (files.isEmpty()) return null
+
+        val repoName = "sherpa-onnx-whisper-$suffix"
+        return SpeechModel(
+            id = modelId,
+            type = type,
+            language = language,
+            baseUrl = "https://huggingface.co/csukuangfj/$repoName/resolve/main",
+            files = files
+        )
+    }
+
+    /**
+     * Get only locally downloaded models. No network call.
+     * Scans disk for downloaded models and returns them with isDownloaded status.
+     */
+    fun getLocalModels(): List<SpeechModel> {
+        val allModels = buildOfflineFallback()
+        return allModels
+            .map { model -> model.copy(isDownloaded = isModelDownloaded(model)) }
+            .filter { it.isDownloaded }
     }
 
     /**
      * Get all available models with their download status.
      * Uses cached discovered models or falls back to static catalog.
+     * Always includes locally downloaded models even if not in the discovered list.
      */
     fun getAvailableModels(): List<SpeechModel> {
         val models = discoveredModels ?: SpeechModelCatalog.allModels
-        return models.map { model ->
+        val modelsWithStatus = models.map { model ->
             model.copy(isDownloaded = isModelDownloaded(model))
         }
+
+        // Merge in any downloaded models not in the discovered/catalog list
+        if (discoveredModels != null) {
+            val knownIds = modelsWithStatus.map { it.id }.toSet()
+            val extraLocal = getLocalModels().filter { it.id !in knownIds }
+            return modelsWithStatus + extraLocal
+        }
+
+        return modelsWithStatus
     }
 
     /**

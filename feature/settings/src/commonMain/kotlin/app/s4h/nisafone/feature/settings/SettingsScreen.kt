@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,11 +39,14 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -87,9 +91,27 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var modelToDelete by remember { mutableStateOf<SpeechModel?>(null) }
 
-    LaunchedEffect(Unit) {
-        viewModel.loadModels()
+    modelToDelete?.let { model ->
+        AlertDialog(
+            onDismissRequest = { modelToDelete = null },
+            title = { Text("Delete model?") },
+            text = { Text("Delete ${model.displayName} (${model.totalSizeMB}MB)? This will free up storage space.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteModel(model)
+                    modelToDelete = null
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { modelToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     LaunchedEffect(uiState.error) {
@@ -187,9 +209,46 @@ fun SettingsScreen(
                     isDownloading = model.id in uiState.downloadingModelIds,
                     downloadProgress = uiState.downloadProgress[model.id] ?: 0f,
                     onDownload = { viewModel.downloadModel(model) },
-                    onDelete = { viewModel.deleteModel(model) },
+                    onDelete = { modelToDelete = model },
                     onSelect = { viewModel.selectModel(model) }
                 )
+            }
+
+            // Discover more models button
+            if (!uiState.hasDiscoveredRemoteModels) {
+                item {
+                    if (uiState.isDiscovering) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Discovering models...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { viewModel.discoverMoreModels() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudDownload,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Download additional models")
+                        }
+                    }
+                }
             }
 
             // About section

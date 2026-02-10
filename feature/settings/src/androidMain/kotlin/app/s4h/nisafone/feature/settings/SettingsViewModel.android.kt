@@ -81,14 +81,12 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
     override fun loadModels() {
         viewModelScope.launch {
             try {
-                // First discover models from Hugging Face (cached after first call)
-                _uiState.update { it.copy(error = "Discovering available models...") }
-                modelManager.discoverModels()
-
-                // Run disk I/O on background thread
+                // After discovery, use full catalog; otherwise local-only (fast, no network)
+                val useFullCatalog = _uiState.value.hasDiscoveredRemoteModels
                 val (models, selectedId, storageUsed) = withContext(Dispatchers.IO) {
                     Triple(
-                        modelManager.getAvailableModels(),
+                        if (useFullCatalog) modelManager.getAvailableModels()
+                        else modelManager.getLocalModels(),
                         modelManager.getSelectedModelId(),
                         modelManager.getTotalStorageUsed() / 1_000_000
                     )
@@ -105,6 +103,43 @@ class SettingsViewModel : ViewModel(), KoinComponent, SettingsViewModelInterface
             } catch (e: Exception) {
                 logger.e(e) { "Failed to load models" }
                 _uiState.update { it.copy(error = "Failed to load models: ${e.message}") }
+            }
+        }
+    }
+
+    override fun discoverMoreModels() {
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(isDiscovering = true) }
+
+                modelManager.discoverModels()
+
+                val (models, selectedId, storageUsed) = withContext(Dispatchers.IO) {
+                    Triple(
+                        modelManager.getAvailableModels(),
+                        modelManager.getSelectedModelId(),
+                        modelManager.getTotalStorageUsed() / 1_000_000
+                    )
+                }
+
+                _uiState.update {
+                    it.copy(
+                        models = models,
+                        selectedModelId = selectedId,
+                        totalStorageUsedMB = storageUsed.toInt(),
+                        isDiscovering = false,
+                        hasDiscoveredRemoteModels = true,
+                        error = null
+                    )
+                }
+            } catch (e: Exception) {
+                logger.e(e) { "Failed to discover models" }
+                _uiState.update {
+                    it.copy(
+                        isDiscovering = false,
+                        error = "Failed to discover models: ${e.message}"
+                    )
+                }
             }
         }
     }

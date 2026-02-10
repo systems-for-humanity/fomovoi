@@ -17,7 +17,9 @@ data class SettingsUiState(
     val languageHint: LanguageHint = LanguageHint.AUTO_DETECT,
     val translateToEnglish: Boolean = true,
     val autoEmailEnabled: Boolean = false,
-    val autoEmailAddress: String = ""
+    val autoEmailAddress: String = "",
+    val isDiscovering: Boolean = false,
+    val hasDiscoveredRemoteModels: Boolean = false
 ) {
     val filteredModels: List<SpeechModel>
         get() {
@@ -66,5 +68,6 @@ interface SettingsViewModelInterface {
     fun setTranslateToEnglish(translate: Boolean)
     fun setAutoEmailEnabled(enabled: Boolean)
     fun setAutoEmailAddress(address: String)
+    fun discoverMoreModels()
     fun clearError()
 }

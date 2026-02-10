@@ -69,6 +69,10 @@ class IosSettingsViewModel(
         _uiState.update { it.copy(translateToEnglish = translate) }
     }
 
+    override fun discoverMoreModels() {
+        // Not supported on iOS
+    }
+
     override fun setAutoEmailEnabled(enabled: Boolean) {
         emailSettingsRepository.setAutoEmailEnabled(enabled)
         _uiState.update { it.copy(autoEmailEnabled = enabled) }
