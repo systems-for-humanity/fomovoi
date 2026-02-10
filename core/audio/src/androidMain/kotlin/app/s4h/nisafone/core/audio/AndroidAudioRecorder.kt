@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 actual fun createAudioRecorder(): AudioRecorder = AndroidAudioRecorder()
 
@@ -220,7 +221,7 @@ class AndroidAudioRecorder(
             val buffer = ByteArray(bufferSize)
             val startTime = System.currentTimeMillis()
 
-            while (isActive && _state.value == RecordingState.RECORDING) {
+            while (isActive) {
                 val bytesRead = audioRecord?.read(buffer, 0, buffer.size) ?: -1
                 if (bytesRead > 0) {
                     val chunk = AudioChunk(
@@ -230,6 +231,9 @@ class AndroidAudioRecorder(
                         channels = 1
                     )
                     _audioStream.emit(chunk)
+                } else {
+                    // AudioRecord.stop() was called and buffer is drained
+                    break
                 }
             }
         }
@@ -237,11 +241,15 @@ class AndroidAudioRecorder(
 
     override suspend fun stopRecording() {
         logger.d { "Stopping recording" }
+        // Stop capture — read() will return remaining buffered data, then 0
+        audioRecord?.stop()
+        // Wait for recording loop to drain the buffer (with timeout as safety net)
+        withTimeoutOrNull(1000) { recordingJob?.join() }
         recordingJob?.cancel()
         recordingJob = null
-        audioRecord?.stop()
         audioRecord?.release()
         audioRecord = null
+        audioManager?.let { cleanupBluetooth(it) }
         _state.value = RecordingState.IDLE
     }
 

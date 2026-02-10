@@ -334,13 +334,15 @@ class RecordingViewModel(
         logger.d { "stopRecording() called, isRecording=${_uiState.value.isRecording}" }
         viewModelScope.launch {
             try {
-                // Stop audio stream piping
-                audioStreamJob?.cancel()
-                audioStreamJob = null
-
+                // Stop audio recorder first — this drains any remaining buffered
+                // audio (important for Bluetooth SCO which has extra latency)
                 if (!transcriptionService.handlesAudioInternally) {
                     audioRecorder.stopRecording()
                 }
+
+                // Now stop piping — all drained audio has been forwarded
+                audioStreamJob?.cancel()
+                audioStreamJob = null
                 logger.d { "Calling transcriptionService.stopTranscription()" }
                 val result = transcriptionService.stopTranscription()
                 logger.d { "stopTranscription returned: ${result?.utterances?.size ?: 0} utterances" }
